@@ -2,4 +2,4 @@
 
 Programme préliminaire, mais fonctionnel. Utilise OpenStreetMap et nécessite 
 les données IRIS de l'INSEE en format geojson disponibles
-[ici](https://data.opendatasoft.com/explore/dataset/iris@detailedefrance/export)
+[ici](https://data.opendatasoft.com/explore/dataset/iris@datailedefrance/export/)
