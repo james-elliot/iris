@@ -4,8 +4,8 @@ use geo_types::Geometry;
 use std::convert::TryInto;
 use std::fs;
 use geo::algorithm::contains::Contains;
-use std::{thread, time};
-
+use std::{thread, time, io};
+use std::io::Write;
 //use std::convert::TryFrom;
 //use serde_json;
 //use std::str::FromStr;
@@ -50,18 +50,35 @@ fn main() {
 		tab.push(t);
 	    }
 	    let osm = Openstreetmap::new();
-	    let address = "3 allee de la Bresse, Colomiers, France";
-	    let res = osm.forward(&address);
-	    let p:Vec<Point<f64>> = res.unwrap();
-	    println!("{}",p.len());
-	    println!("{:?} {:?}",p,p[0]);
-	    for i in 0..tab.len() {
-		if tab[i].geom.contains(&p[0]) {
-		    println!("{:?}",tab[i]);
+	    let stdin = io::stdin();
+	    let mut buffer = String::new();
+	    loop {
+		print!("Enter address:");
+		io::stdout().flush().unwrap();
+		buffer.clear();
+		match stdin.read_line(&mut buffer) {
+		    Ok(_) => {
+			let res = osm.forward(&buffer);
+			let p:Vec<Point<f64>> = res.unwrap();
+			if p.len()>0 {
+			    println!("{:?}",p[0]);
+			    for i in 0..tab.len() {
+				if tab[i].geom.contains(&p[0]) {
+				    println!("{:?}",tab[i]);
+				}
+			    }
+			}
+			else {
+			    println!("Invalid address");
+			}
+			let tm = time::Duration::from_millis(1100);
+			thread::sleep(tm);
+		    },
+		    _ => {
+			panic!("Invalid string");
+		    }
 		}
 	    }
-	    let tm = time::Duration::from_millis(1100);
-	    thread::sleep(tm);
         },
         _ => {
             panic!("Looking for a feature collection but didnt find one");
