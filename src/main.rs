@@ -5,6 +5,7 @@ use std::convert::TryInto;
 use std::fs;
 use geo::algorithm::contains::Contains;
 use std::{thread, time, io};
+use std::time::Instant;
 use std::io::Write;
 //use std::convert::TryFrom;
 //use serde_json;
@@ -22,14 +23,20 @@ struct Maille {
 }
 
 fn main() {
+    let now = Instant::now();
     let contents = fs::read_to_string("indice-de-defavorisation-sociale-fdep-par-iris.geojson").expect("Something went wrong reading the file");
+    println!("File read in {:?}", now.elapsed());
+    
+    let now = Instant::now();
     let geojson = contents.parse::<GeoJson>().unwrap();
-
+    println!("File parsed in {:?}", now.elapsed());
+    
     let mut tab = Vec::new();
     match geojson {
         GeoJson::FeatureCollection(ctn) => {
 	    let f = ctn.features;
             println!("Found {} features", f.len());
+	    let now = Instant::now();
 	    for i in 0..f.len() {
 		let txchom0 = f[i].property("t1_txchom0").map(|v| (v.as_f64().unwrap()));
 		let txouvr0 = f[i].property("t1_txouvr0").map(|v| (v.as_f64().unwrap()));
@@ -49,6 +56,7 @@ fn main() {
 		};
 		tab.push(t);
 	    }
+	    println!("Struct built in {:?}", now.elapsed());
 	    let osm = Openstreetmap::new();
 	    let stdin = io::stdin();
 	    let mut buffer = String::new();
@@ -58,13 +66,18 @@ fn main() {
 		buffer.clear();
 		match stdin.read_line(&mut buffer) {
 		    Ok(_) => {
+			let now = Instant::now();
 			let res = osm.forward(&buffer);
+			println!("osm request duration : {:?}", now.elapsed());
 			let p:Vec<Point<f64>> = res.unwrap();
 			if p.len()>0 {
 			    println!("{:?}",p[0]);
+			    let now = Instant::now();
 			    for i in 0..tab.len() {
 				if tab[i].geom.contains(&p[0]) {
+				    println!("found iris in {:?}", now.elapsed());
 				    println!("{:?}",tab[i]);
+				    break;
 				}
 			    }
 			}
