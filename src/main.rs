@@ -13,9 +13,11 @@ use std::io::Write;
 
 
 #[derive(Debug)]
-struct Maille {
+struct Maille<'a> {
     geom : Geometry<f64>,
+//    com : Option<&'a str>, // Code insee commune
     pop : Option<i64>, // Population
+    dcomiris : Option<&'a str>, // Code iris
     rev_med : Option<f64>, // Revenu median
     tx_bac : Option<f64>, // Taux de bachelier
     tx_chom : Option<f64>, // Taux de chomage
@@ -38,6 +40,9 @@ fn main() {
             println!("Found {} features", f.len());
 	    let now = Instant::now();
 	    for i in 0..f.len() {
+//		println!("{:?}",f[i]);
+//		let com = f[i].property("t1_com").map(|v| (v.as_str().unwrap()));
+		let dcomiris = f[i].property("c_dcomiris").map(|v| (v.as_str().unwrap()));
 		let txchom0 = f[i].property("t1_txchom0").map(|v| (v.as_f64().unwrap()));
 		let txouvr0 = f[i].property("t1_txouvr0").map(|v| (v.as_f64().unwrap()));
 		let p09_pop = f[i].property("t1_p09_pop").map(|v| (v.as_i64().unwrap()));
@@ -48,6 +53,8 @@ fn main() {
 //		println!("{:?}",geom);
 		let t = Maille {
 		    geom : geom,
+//		    com : com,
+		    dcomiris : dcomiris,
 		    pop : p09_pop,
 		    rev_med : rev_med,
 		    tx_bac : txbac09,
