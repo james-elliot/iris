@@ -67,7 +67,7 @@ fn read_adresses() -> Vec<Adresse> {
 struct Adresse2 {
 //    id:String,
 //    id_fantoir:String,
-    numero:String,
+    numero:Option<i32>,
     rep:String,
     nom_voie:String,
     code_postal:i32,
@@ -115,11 +115,6 @@ fn read_adresses2() -> Vec<Adresse2> {
     let now = Instant::now();
     tab.sort_by(|a, b| a.code_postal.cmp(&b.code_postal));
     println!("Addresses sorted in {:?}", now.elapsed());
-    for i in 0..tab.len()-1 {
-	if tab[i].code_postal>tab[i+1].code_postal {
-	    println!("{:?}\n{:?}\n",tab[i],tab[i+1]);
-	}
-    }
     return tab;
 }
 
@@ -291,7 +286,6 @@ fn find_num(v: &String,e:usize) -> (i32,String) {
 		    return (num,v[e..].to_owned());
 		}
 	    }
-	    println!("i={:}",i);
 	    let num=v[0..i+1].parse::<i32>().unwrap();
 	    return (num,v[e..].to_owned());
 	}
@@ -299,50 +293,129 @@ fn find_num(v: &String,e:usize) -> (i32,String) {
     return (0,v.to_owned());
 }
 
+fn remove_last(v:String)->String {
+    let lasts=["app ","appt ","app. ","appt. ","apt ","apt. ","bat ","bat. "];
+    for i in 0..lasts.len() {
+	let a = lasts[i];
+	match v.find(a) {
+	    Some(i) => {
+		for j in (0..i).rev() {
+		    if v.chars().nth(j).unwrap()!= ' ' {
+			return v[0..j+1].to_owned();
+		    }
+		}
+		return v[0..i].to_owned();
+	    },
+	    None => {}
+	    }
+	}
+    
+    return v;
+}
+
 use regex::Regex;
 fn extract_info(r:&String)-> (i32,String) {
+    /*
     let cpt = ["b","bis","ter","t"];
     let re = Regex::new(r"[0-9]").unwrap();
     let re2 = Regex::new(r"[^0-9]").unwrap();
     let re3 = Regex::new(r"[^0123456789 ]").unwrap();
     let re4 = Regex::new(r"[ ]").unwrap();
+     */
+    let re = Regex::new(r"[0-9]").unwrap();
     let mut v = r.clone();
     v.retain(|c| !r#"(),".;:'"#.contains(c));
     v = v.to_lowercase();
     v = diacritics::remove_diacritics(&v);
     let (v,i)=find_voies(&v); 
-    println!("{:}",v);
-
-    let (num,v) = find_num(&v,i);
-    println!("num:{:} v:{:}",num,v);
-    let m = re.find(&v);
-    match m {
-	Some(m) => {
-	    let i = m.start();
-	    if i==0 {
-		let j = re2.find(&v).unwrap().start();
-		let num = v[i..j].parse::<i32>().unwrap();
-		let k = re3.find(&v).unwrap().start();
-		let l = k+1+re4.find(&v[(k+1)..]).unwrap().start();
-		let comp = &v[k..l];
-		let street=
-		    if cpt.contains(&comp) {
-			let m=l+re3.find(&v[l..]).unwrap().start();
-			&v[m..]
-		    }
-		else {
-		    &v[k..]
-		};
-//		println!("num={:} cmp={:} street={:}",num,comp,street);
-		return (num,street.to_string());
+//    println!("{:}",v);
+    if i != 0 {
+	let (num,v) = find_num(&v,i);
+	//    println!("num:{:} v:{:}",num,v);
+	let v=remove_last(v);
+	//    println!("{:} {:}",num,v);
+	return (num,v);
+    }
+    let res = re.find(&v);
+    match res {
+	Some(i) => {
+	    if i=0 {
 	    }
 	},
-	None=>{
+	None =>{
 	}
     }
-    return (0,"".to_owned());
 }
 
+use ngrammatic::{CorpusBuilder, Pad};
+fn find_first_last(street:String,num:i32,cp:i32,addrs:&Vec<Adresse2>)->Option<(f64,f64)> {
+    let mut low = 0;
+    let mut high = addrs.len()-1;
+    let mut p = addrs.len()/2;
+    while addrs[p].code_postal != cp {
+	if low>=high {panic!("Should never happen");}
+	if addrs[p].code_postal > cp {
+	    high = p-1;
+	    p = (p+low)/2;
+	}
+	else {
+	    low = p+1;
+	    p = (p+high)/2;
+	}
+    }
+    let mut corpus = CorpusBuilder::new()
+    .arity(2)
+    .pad_full(Pad::Auto)
+    .finish();
+    let mut low = p;
+    while addrs[low].code_postal == cp {
+	corpus.add_text(&addrs[low].nom_voie);
+	low = low-1;
+	// Build up the list of known words
+	
+    }
+    let mut high = p;
+    while addrs[high].code_postal == cp {
+	corpus.add_text(&addrs[high].nom_voie);
+	high = high+1;
+    }
+    let results = corpus.search(&street, 0.9);
+    let top = results.first();
+    match top {
+	Some(t) => {
+	    let mut closer = 1000000;
+	    let mut lat = 0.0;
+	    let mut lon = 0.0;
+	    for i in low..high+1 {
+		if t.text.eq(&addrs[i].nom_voie) {
+		    match addrs[i].numero {
+			Some(n) => {
+			    if n==num {
+				return Some((addrs[i].lat,addrs[i].lon));
+			    }
+			    if (n-num).abs()<closer {
+				closer = (n-num).abs();
+				lat = addrs[i].lat;
+				lon = addrs[i].lon;
+			    }
+			},
+			None=>{}
+		    }
+		}
+	    }
+	    if lat!=0. {
+		return Some((lat,lon));
+	    }
+	    else {
+		return Some((addrs[low].lat,addrs[low].lon));
+	    }
+	},
+	None => {
+	//    println!("Nothing found")
+	}
+    }
+    return None;
+}
 
 fn get_iris_adresses(r:&Patient,iris:&Vec<Maille>,addrs:&Vec<Adresse2>) -> Option<Maille> {
     let res = r.PST_CP.parse::<i32>();
@@ -351,6 +424,14 @@ fn get_iris_adresses(r:&Patient,iris:&Vec<Maille>,addrs:&Vec<Adresse2>) -> Optio
 	    let (num,street)=extract_info(&r.PST_ADRESSE);
 	    let city = r.PST_VILLE.to_lowercase();
 	    println!("{:} {:} {:} {:}",num,street,cp,city);
+	    let res = find_first_last(street,num,cp,addrs);
+	    match res {
+		Some((lat,lon)) => {
+		    println!("{:} {:}",lat,lon);
+		},
+		None => {}
+	    }
+	    
 	},
 	Err (_) => {println!("No CP");}
     }
@@ -362,7 +443,7 @@ fn read_from_csv2(iris:Vec<Maille>,addrs:Vec<Adresse2>) -> () {
     let csv = read_csv();
     for i in 0..csv.len() {
 	println!("{:?}",csv[i]);
-	let now = Instant::now();
+//	let now = Instant::now();
 	let res = get_iris_adresses(&csv[i],&iris,&addrs);
 
 	match res {
@@ -407,10 +488,11 @@ fn clean_adresses(mut a:Vec<Adresse2>) -> Vec<Adresse2> {
 
 fn main() {
     let iris = read_iris();
-    let osm = Openstreetmap::new();
+    //    let osm = Openstreetmap::new();
     //    read_from_stdin(iris,osm);
+    //    read_from_csv(iris,osm);
     let mut addrs = read_adresses2();
+    //    let mut addrs = Vec::new();
     addrs=clean_adresses(addrs);
-//    read_from_csv(iris,osm);
     read_from_csv2(iris,addrs);
 }
