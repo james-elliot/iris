@@ -12,4 +12,6 @@ geo = "0.23.0"
 geo-types = "0.7.7"
 csv = "1.1"
 serde = { version = "1", features = ["derive"] }
+regex = "1"
+diacritics = "0.1.3"
 
