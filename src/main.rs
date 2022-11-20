@@ -324,6 +324,7 @@ fn extract_info(r:&String)-> (i32,String) {
      */
     let re = Regex::new(r"[0-9]").unwrap();
     let nre = Regex::new(r"[^0123456789 ]").unwrap();
+    let re4 = Regex::new(r"[ ]").unwrap();
     let mut v = r.clone();
     v.retain(|c| !r#"(),".;:'"#.contains(c));
     v = v.to_lowercase();
@@ -340,18 +341,28 @@ fn extract_info(r:&String)-> (i32,String) {
     let res = re.find(&v);
     let nres = nre.find(&v);
     match (res,nres) {
-	(Some(i),Some(j)) => {
-	    if j> i {
-		
+	(Some(r1),Some(r2)) => {
+	    let i = r1.start();
+	    let j = r2.start();
+	    if j > i {
+		let k=re4.find(&v[i..]).unwrap().start();
+		let num = v[i..k].parse::<i32>().unwrap();
+		let v = remove_last(v[j..].to_string());
+		return (num,v);
+	    }
+	    else {
+		return (0,v);
 	    }
 	},
 	_ =>{
+	    return (0,v);
 	}
     }
 }
 
 use ngrammatic::{CorpusBuilder, Pad};
-fn find_first_last(street:String,num:i32,cp:i32,addrs:&Vec<Adresse2>)->Option<(f64,f64)> {
+use rust_fuzzy_search::fuzzy_compare;
+fn find_first_last(street:String,num:i32,cp:i32,city:String,addrs:&Vec<Adresse2>)->Option<(f64,f64,i32,String,f32)> {
     let mut low = 0;
     let mut high = addrs.len()-1;
     let mut p = addrs.len()/2;
@@ -367,26 +378,33 @@ fn find_first_last(street:String,num:i32,cp:i32,addrs:&Vec<Adresse2>)->Option<(f
 	}
     }
     let mut corpus = CorpusBuilder::new()
-    .arity(2)
-    .pad_full(Pad::Auto)
-    .finish();
+	.arity(2)
+	.pad_full(Pad::Auto)
+	.finish();
+
     let mut low = p;
     while addrs[low].code_postal == cp {
-	corpus.add_text(&addrs[low].nom_voie);
+	let score = fuzzy_compare(&city,&addrs[low].nom_commune);
+	if score > 0.7 {
+	    corpus.add_text(&addrs[low].nom_voie);
+	}
 	low = low-1;
-	// Build up the list of known words
-	
     }
+
     let mut high = p;
     while addrs[high].code_postal == cp {
-	corpus.add_text(&addrs[high].nom_voie);
+	let score = fuzzy_compare(&city,&addrs[high].nom_commune);
+	if score > 0.7 {
+	    corpus.add_text(&addrs[high].nom_voie);
+	}
 	high = high+1;
     }
-    let results = corpus.search(&street, 0.9);
+    let results = corpus.search(&street, 0.8);
     let top = results.first();
     match top {
 	Some(t) => {
 	    let mut closer = 1000000;
+	    let mut ind = -1;
 	    let mut lat = 0.0;
 	    let mut lon = 0.0;
 	    for i in low..high+1 {
@@ -394,9 +412,10 @@ fn find_first_last(street:String,num:i32,cp:i32,addrs:&Vec<Adresse2>)->Option<(f
 		    match addrs[i].numero {
 			Some(n) => {
 			    if n==num {
-				return Some((addrs[i].lat,addrs[i].lon));
+				return Some((addrs[i].lat,addrs[i].lon,n,t.text.clone(),t.similarity));
 			    }
 			    if (n-num).abs()<closer {
+				ind=n;
 				closer = (n-num).abs();
 				lat = addrs[i].lat;
 				lon = addrs[i].lon;
@@ -407,10 +426,10 @@ fn find_first_last(street:String,num:i32,cp:i32,addrs:&Vec<Adresse2>)->Option<(f
 		}
 	    }
 	    if lat!=0. {
-		return Some((lat,lon));
+		return Some((lat,lon,ind,t.text.clone(),t.similarity));
 	    }
 	    else {
-		return Some((addrs[low].lat,addrs[low].lon));
+		return Some((addrs[low].lat,addrs[low].lon,ind,t.text.clone(),t.similarity));
 	    }
 	},
 	None => {
@@ -427,10 +446,10 @@ fn get_iris_adresses(r:&Patient,iris:&Vec<Maille>,addrs:&Vec<Adresse2>) -> Optio
 	    let (num,street)=extract_info(&r.PST_ADRESSE);
 	    let city = r.PST_VILLE.to_lowercase();
 	    println!("{:} {:} {:} {:}",num,street,cp,city);
-	    let res = find_first_last(street,num,cp,addrs);
+	    let res = find_first_last(street,num,cp,city,addrs);
 	    match res {
-		Some((lat,lon)) => {
-		    println!("{:} {:}",lat,lon);
+		Some((lat,lon,num,text,sim)) => {
+		    println!("{:} {:} {:} {:} {:}",lat,lon,num,text,sim);
 		},
 		None => {}
 	    }
