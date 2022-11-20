@@ -323,6 +323,7 @@ fn extract_info(r:&String)-> (i32,String) {
     let re4 = Regex::new(r"[ ]").unwrap();
      */
     let re = Regex::new(r"[0-9]").unwrap();
+    let nre = Regex::new(r"[^0123456789 ]").unwrap();
     let mut v = r.clone();
     v.retain(|c| !r#"(),".;:'"#.contains(c));
     v = v.to_lowercase();
@@ -337,12 +338,14 @@ fn extract_info(r:&String)-> (i32,String) {
 	return (num,v);
     }
     let res = re.find(&v);
-    match res {
-	Some(i) => {
-	    if i=0 {
+    let nres = nre.find(&v);
+    match (res,nres) {
+	(Some(i),Some(j)) => {
+	    if j> i {
+		
 	    }
 	},
-	None =>{
+	_ =>{
 	}
     }
 }
