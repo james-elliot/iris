@@ -251,7 +251,7 @@ fn find_voies(v:&String) -> (String,usize) {
 	("allees ","allees"),
 	("blv ","boulevard"),
 	("blvd ","boulevard"),
-	("allee ","allees"),
+	("allee ","allee"),
 	("av ","avenue"),
 	("ch ","chemin"),
 	("imp ","impasse"),
@@ -360,14 +360,12 @@ fn extract_info(r:&String)-> (i32,String) {
     }
 }
 
-use ngrammatic::{CorpusBuilder, Pad};
-use rust_fuzzy_search::fuzzy_compare;
-fn find_first_last(street:String,num:i32,cp:i32,city:String,addrs:&Vec<Adresse2>)->Option<(f64,f64,i32,String,f32)> {
+fn find_first_last_cp(addrs:&Vec<Adresse2>,cp:i32,v:&mut Vec<usize>) -> bool {
     let mut low = 0;
     let mut high = addrs.len()-1;
     let mut p = addrs.len()/2;
     while addrs[p].code_postal != cp {
-	if low>=high {panic!("Should never happen");}
+	if low>=high {return false;}
 	if addrs[p].code_postal > cp {
 	    high = p-1;
 	    p = (p+low)/2;
@@ -377,85 +375,129 @@ fn find_first_last(street:String,num:i32,cp:i32,city:String,addrs:&Vec<Adresse2>
 	    p = (p+high)/2;
 	}
     }
-    let mut corpus = CorpusBuilder::new()
-	.arity(2)
-	.pad_full(Pad::Auto)
-	.finish();
-
     let mut low = p;
-    while addrs[low].code_postal == cp {
-	let score = fuzzy_compare(&city,&addrs[low].nom_commune);
-	if score > 0.7 {
-	    corpus.add_text(&addrs[low].nom_voie);
+    while addrs[low].code_postal == cp {low = low-1;v.push(low);}
+    let mut high = p;
+    while addrs[high].code_postal == cp {high = high+1;v.push(high);}
+    return true;
+}
+
+fn find_vec_city(addrs:&Vec<Adresse2>,cp:i32,city:String,v:&mut Vec<usize>) -> bool {
+    for i in 0..addrs.len() {
+	if city.eq(&addrs[i].nom_commune) && (cp==0 || (cp/1000)==(addrs[i].code_postal/1000)) {
+	    v.push(i);
 	}
-	low = low-1;
+    }
+    return v.len() > 0;
+}
+
+use ngrammatic::{CorpusBuilder, Pad};
+use rust_fuzzy_search::fuzzy_compare;
+fn get_addrs(street:String,num:i32,cp:i32,city:String,addrs:&Vec<Adresse2>)->Option<(f64,f64,i32,String,f32)> {
+    let mut similarity = 0.0;
+    let mut text = String::new();
+    let mut tab = Vec::new();
+    let res = find_first_last_cp(addrs,cp,&mut tab);
+    if res  {
+	let mut corpus = CorpusBuilder::new()
+	    .arity(2)
+	    .pad_full(Pad::Auto)
+	    .finish();
+	for i in 0..tab.len() {
+	    let score = fuzzy_compare(&city,&addrs[tab[i]].nom_commune);
+	    if score > 0.8 {
+		if score != 1. {println!("{:} {:}",city,addrs[tab[i]].nom_commune);}
+		corpus.add_text(&addrs[tab[i]].nom_voie);
+	    }
+	}
+	let results = corpus.search(&street, 0.8);
+	match results.first() {
+	    Some(t) => {text.push_str(&t.text);similarity=t.similarity;},
+	    None => {}
+	}
     }
 
-    let mut high = p;
-    while addrs[high].code_postal == cp {
-	let score = fuzzy_compare(&city,&addrs[high].nom_commune);
-	if score > 0.7 {
-	    corpus.add_text(&addrs[high].nom_voie);
+    if similarity == 0.0 {
+	println!("Trying city search");
+	tab.clear();
+	let res = find_vec_city(addrs,cp,city,&mut tab);
+	if !res {return None;}
+	let mut corpus = CorpusBuilder::new()
+	    .arity(2)
+	    .pad_full(Pad::Auto)
+	    .finish();
+	for i in 0..tab.len() {
+	    corpus.add_text(&addrs[tab[i]].nom_voie);
 	}
-	high = high+1;
+	let results = corpus.search(&street, 0.8);
+	match results.first() {
+	    None => {return None;},
+	    Some(t) => {text.push_str(&t.text);similarity=t.similarity;}
+	}
     }
-    let results = corpus.search(&street, 0.8);
-    let top = results.first();
-    match top {
-	Some(t) => {
-	    let mut closer = 1000000;
-	    let mut ind = -1;
-	    let mut lat = 0.0;
-	    let mut lon = 0.0;
-	    for i in low..high+1 {
-		if t.text.eq(&addrs[i].nom_voie) {
-		    match addrs[i].numero {
-			Some(n) => {
-			    if n==num {
-				return Some((addrs[i].lat,addrs[i].lon,n,t.text.clone(),t.similarity));
-			    }
-			    if (n-num).abs()<closer {
-				ind=n;
-				closer = (n-num).abs();
-				lat = addrs[i].lat;
-				lon = addrs[i].lon;
-			    }
-			},
-			None=>{}
+    
+    let mut closer = 1000000;
+    let mut ind = -1;
+    let mut lat = 0.0;
+    let mut lon = 0.0;
+    for i in 0..tab.len() {
+	if text.eq(&addrs[tab[i]].nom_voie) {
+	    match addrs[tab[i]].numero {
+		Some(n) => {
+		    if n==num {
+			return Some((addrs[tab[i]].lat,addrs[tab[i]].lon,n,text,similarity));
 		    }
-		}
+		    if (n-num).abs()<closer {
+			ind=n;
+			closer = (n-num).abs();
+			lat = addrs[tab[i]].lat;
+			lon = addrs[tab[i]].lon;
+		    }
+		},
+		None=>{}
 	    }
-	    if lat!=0. {
-		return Some((lat,lon,ind,t.text.clone(),t.similarity));
-	    }
-	    else {
-		return Some((addrs[low].lat,addrs[low].lon,ind,t.text.clone(),t.similarity));
-	    }
-	},
-	None => {
-	//    println!("Nothing found")
 	}
     }
-    return None;
+    if lat!=0. {
+	return Some((lat,lon,ind,text,similarity));
+    }
+    else {
+	return Some((addrs[tab[0]].lat,addrs[tab[0]].lon,ind,text,similarity));
+    }
 }
+
+
 
 fn get_iris_adresses(r:&Patient,iris:&Vec<Maille>,addrs:&Vec<Adresse2>) -> Option<Maille> {
     let res = r.PST_CP.parse::<i32>();
     match res {
 	Ok(cp) => {
 	    let (num,street)=extract_info(&r.PST_ADRESSE);
-	    let city = r.PST_VILLE.to_lowercase();
+	    let mut city = r.PST_VILLE.to_lowercase();
+	    let re = Regex::new(r"^st ").unwrap();
+	    city.retain(|c| !r#"(),".;:'"#.contains(c));
+	    city = diacritics::remove_diacritics(&city);
+	    city = str::replace(&city,"-"," ");
+	    city = str::replace(&city," st "," saint ");
+	    city = re.replace(&city,"saint ").into_owned();
+
 	    println!("{:} {:} {:} {:}",num,street,cp,city);
-	    let res = find_first_last(street,num,cp,city,addrs);
+	    let res = get_addrs(street,num,cp,city,addrs);
 	    match res {
 		Some((lat,lon,num,text,sim)) => {
 		    println!("{:} {:} {:} {:} {:}",lat,lon,num,text,sim);
+		    let p = Point::new (lon,lat);
+		    for i in 0..iris.len() {
+			if iris[i].geom.contains(&p) {
+			    return Some(iris[i].clone());
+			}
+		    }
 		},
 		None => {}
 	    }
 	    
 	},
-	Err (_) => {println!("No CP");}
+	Err (_) => {}
     }
     return None;
 }
@@ -469,7 +511,7 @@ fn read_from_csv2(iris:Vec<Maille>,addrs:Vec<Adresse2>) -> () {
 	let res = get_iris_adresses(&csv[i],&iris,&addrs);
 
 	match res {
-	    Some(v) => {println!("{:?}",v);},
+	    Some(v) => {println!("DCOM_IRIS: {:?}",v.dcomiris);},
 	    None => {println!("Address not found");},
 	}
     }
@@ -486,7 +528,7 @@ fn read_from_csv(iris:Vec<Maille>,osm:Openstreetmap) -> () {
 	let res = get_iris(&addr,&iris,&osm);
 	println!("osm address request duration : {:?}", now.elapsed());
 	match res {
-	    Some(v) => {println!("{:?}",v);},
+	    Some(v) => {println!("DCOM_IRIS: {:?}",v.dcomiris);},
 	    None => {println!("Address not found");},
 	}
 	let tm = time::Duration::from_millis(1100);
@@ -496,6 +538,7 @@ fn read_from_csv(iris:Vec<Maille>,osm:Openstreetmap) -> () {
 
 fn clean_adresses(mut a:Vec<Adresse2>) -> Vec<Adresse2> {
     let now = Instant::now();
+    let re = Regex::new(r"^st ").unwrap();
     for i in 0..a.len() {
 	a[i].nom_voie = a[i].nom_voie.to_lowercase();
 	a[i].nom_voie.retain(|c| !r#"(),".;:'"#.contains(c));
@@ -503,6 +546,9 @@ fn clean_adresses(mut a:Vec<Adresse2>) -> Vec<Adresse2> {
 	a[i].nom_commune = a[i].nom_commune.to_lowercase();
 	a[i].nom_commune.retain(|c| !r#"(),".;:'"#.contains(c));
 	a[i].nom_commune = diacritics::remove_diacritics(&a[i].nom_commune);
+	a[i].nom_commune = str::replace(&a[i].nom_commune,"-"," ");
+	a[i].nom_commune = str::replace(&a[i].nom_commune," st "," saint ");
+	a[i].nom_commune = re.replace(&a[i].nom_commune,"saint ").into_owned();
     }
     println!("Addresses cleaned in {:?}", now.elapsed());
     return a;
