@@ -145,106 +145,77 @@ fn read_iris() -> Vec<Maille> {
     return tab;
 }
 
-fn get_iris(buffer:&String,iris:&Vec<Maille>,osm:&Openstreetmap) -> Option<Maille> {
-    let res = osm.forward(&buffer);
-    let p:Vec<Point<f64>> = res.unwrap();
-    if p.len()>0 {
-	for i in 0..iris.len() {
-	    if iris[i].geom.contains(&p[0]) {return Some(iris[i].clone());}
-	}
-    }
-    return None;
-}
-
-#[allow(dead_code)]
-fn read_from_stdin(iris:Vec<Maille>,osm:Openstreetmap) -> () {
-    let stdin = io::stdin();
-    let mut buffer = String::new();
-    loop {
-	print!("Enter address:");
-	io::stdout().flush().unwrap();
-	buffer.clear();
-	match stdin.read_line(&mut buffer) {
-	    Ok(_) => {
-		let now = Instant::now();
-		let res = get_iris(&buffer,&iris,&osm);
-		println!("osm address request duration : {:?}", now.elapsed());
-		match res {
-		    Some(v) => {println!("{:?}",v);},
-		    None => {println!("Address not found");},
-		}
-		let tm = time::Duration::from_millis(1100);
-		thread::sleep(tm);
-	    },
-	    _ => {panic!("Invalid string")}
-	}
-    }
-}
-
-fn build_address(r:&Patient)-> String {
-    let v = ",";
-    let mut buffer = String::new();
-    buffer.push_str(&r.PST_ADRESSE);
-    buffer.push_str(v);
-    buffer.push_str(&r.PST_CP);
-    buffer.push_str(v);
-    buffer.push_str(&r.PST_VILLE);
-    let res = buffer.to_lowercase();
-    return res;
-}
-
-fn find_voies(v:&String) -> (String,usize) {
+fn find_voies (v:&String) -> (String,String) {
+//    println!("Submitted:{:}",v);
     let voies = [
-	("rue ","rue"),
-	("avenue ","avenue"),
-	("boulevard ","boulevard"),
-	("allees ","allees"),
-	("blv ","boulevard"),
-	("blvd ","boulevard"),
-	("allee ","allee"),
-	("av ","avenue"),
-	("ch ","chemin"),
-	("imp ","impasse"),
-	("route ","route"),
-	("impasse ","impasse"),
-	("passage ","passage"),
-	("chemin ","chemin"),
+	(r"\brue\b","rue"),
+	(r"\bavenue\b","avenue"),
+	(r"\bboulevard\b","boulevard"),
+	(r"\ballees\b","allees"),
+	(r"\bblv\b","boulevard"),
+	(r"\bblvd\b","boulevard"),
+	(r"\ballee\b","allee"),
+	(r"\bav\b","avenue"),
+	(r"\bch\b","chemin"),
+	(r"\bimp\b","impasse"),
+	(r"\broute\b","route"),
+	(r"\bimpasse\b","impasse"),
+	(r"\bpassage\b","passage"),
+	(r"\bchemin\b","chemin"),
     ];
     for i in 0..voies.len() {
 	let (a,b)=voies[i];
-	match v.find(a) {
-	    Some(i) => {
-		let mut nv = v[0..i].to_owned();
-		nv.push_str(b);
-		nv.push_str(&v[i+a.len()-1..]);
-		return (nv,i)
+	let re = Regex::new(a).unwrap();
+	match re.find(&v) {
+	    Some(m) => {
+		let start = m.start();
+		let end = m.end();
+		let first = v[0..start].to_owned();
+		let mut last = b.to_string();
+		last.push_str(&v[end..]);
+		return (first,last)
 	    },
 	    None => {}
 	    }
-	}
-    return (v.clone(),0);
+    }
+    for i in 0..voies.len() {
+	let (a,b)=voies[i];
+	let re = Regex::new(&a[2..]).unwrap();
+	match re.find(&v) {
+	    Some(m) => {
+		let start = m.start();
+		let end = m.end();
+		let first = v[0..start].to_owned();
+		let mut last = b.to_string();
+		last.push_str(&v[end..]);
+		return (first,last)
+	    },
+	    None => {}
+	    }
+    }
+    return (v.clone(),"".to_owned());
 }
 
-fn find_num(v: &String,e:usize) -> (i32,String) {
-    for i in (0..e).rev() {
+fn find_num(v: &String) -> i32 {
+    for i in (0..v.len()).rev() {
 	let c = v.chars().nth(i).unwrap();
 	if c.is_digit(10) {
 	    for j in (0..i).rev() {
 		let c = v.chars().nth(j).unwrap();
 		if ! c.is_digit(10) {
 		    let num=v[j+1..i+1].parse::<i32>().unwrap();
-		    return (num,v[e..].to_owned());
+		    return num;
 		}
 	    }
 	    let num=v[0..i+1].parse::<i32>().unwrap();
-	    return (num,v[e..].to_owned());
+	    return num;
 	}
     }
-    return (0,v.to_owned());
+    return 0;
 }
 
 fn remove_last(v:String)->String {
-    let lasts=["app ","appt ","app. ","appt. ","apt ","apt. ","bat ","bat. "];
+    let lasts=["app ","appt ","apt ","appartement ","bat ","batiment "];
     for i in 0..lasts.len() {
 	let a = lasts[i];
 	match v.find(a) {
@@ -265,13 +236,6 @@ fn remove_last(v:String)->String {
 
 use regex::Regex;
 fn extract_info(r:&String)-> (i32,String) {
-    /*
-    let cpt = ["b","bis","ter","t"];
-    let re = Regex::new(r"[0-9]").unwrap();
-    let re2 = Regex::new(r"[^0-9]").unwrap();
-    let re3 = Regex::new(r"[^0123456789 ]").unwrap();
-    let re4 = Regex::new(r"[ ]").unwrap();
-     */
     let re = Regex::new(r"[0-9]").unwrap();
     let nre = Regex::new(r"[^0123456789 ]").unwrap();
     let re4 = Regex::new(r"[ ]").unwrap();
@@ -279,12 +243,12 @@ fn extract_info(r:&String)-> (i32,String) {
     v.retain(|c| !r#"(),".;:'"#.contains(c));
     v = v.to_lowercase();
     v = diacritics::remove_diacritics(&v);
-    let (v,i)=find_voies(&v); 
+    let (first,last)=find_voies(&v); 
 //    println!("{:}",v);
-    if i != 0 {
-	let (num,v) = find_num(&v,i);
+    if ! last.is_empty() {
+	let num = find_num(&first);
 	//    println!("num:{:} v:{:}",num,v);
-	let v=remove_last(v);
+	let v=remove_last(last);
 	//    println!("{:} {:}",num,v);
 	return (num,v);
     }
@@ -300,17 +264,14 @@ fn extract_info(r:&String)-> (i32,String) {
 		let v = remove_last(v[j..].to_string());
 		return (num,v);
 	    }
-	    else {
-		return (0,v);
-	    }
 	},
-	_ =>{
-	    return (0,v);
-	}
+	_ =>{}
     }
+    return (0,v);
 }
 
 fn find_first_last_cp(addrs:&Vec<Adresse2>,cp:i32,v:&mut Vec<usize>) -> bool {
+    if cp==0 {return false;}
     let mut low = 0;
     let mut high = addrs.len()-1;
     let mut p = addrs.len()/2;
@@ -343,13 +304,10 @@ fn find_vec_city(addrs:&Vec<Adresse2>,cp:i32,city:String,v:&mut Vec<usize>) -> b
 
 use ngrammatic::{CorpusBuilder, Pad};
 use rust_fuzzy_search::fuzzy_compare;
-fn get_addrs(street:String,num:i32,cp:i32,city:String,addrs:&Vec<Adresse2>)->Option<(f64,f64,i32,String,f32)> {
-    let mut sim_street = 0.0;
-    let mut sim_city = 1.0;
+fn get_addrs(street:String,num:i32,cp:i32,city:String,addrs:&Vec<Adresse2>)->Option<usize> {
     let mut text = String::new();
     let mut tab = Vec::new();
-    let res = find_first_last_cp(addrs,cp,&mut tab);
-    if res  {
+    if find_first_last_cp(addrs,cp,&mut tab)  {
 	let mut corpus = CorpusBuilder::new()
 	    .arity(2)
 	    .pad_full(Pad::Auto)
@@ -363,16 +321,15 @@ fn get_addrs(street:String,num:i32,cp:i32,city:String,addrs:&Vec<Adresse2>)->Opt
 	}
 	let results = corpus.search(&street, 0.8);
 	match results.first() {
-	    Some(t) => {text.push_str(&t.text);sim_street=t.similarity;},
+	    Some(t) => {text.push_str(&t.text);},
 	    None => {},
 	}
     }
 
-    if sim_street == 0.0 {
+    if text.is_empty() {
 	println!("Trying city search");
 	tab.clear();
-	let res = find_vec_city(addrs,cp,city,&mut tab);
-	if !res {return None;}
+	if ! find_vec_city(addrs,cp,city,&mut tab) {return None;}
 	let mut corpus = CorpusBuilder::new()
 	    .arity(2)
 	    .pad_full(Pad::Auto)
@@ -383,78 +340,65 @@ fn get_addrs(street:String,num:i32,cp:i32,city:String,addrs:&Vec<Adresse2>)->Opt
 	let results = corpus.search(&street, 0.8);
 	match results.first() {
 	    None => {return None;},
-	    Some(t) => {text.push_str(&t.text);sim_street=t.similarity;}
+	    Some(t) => {text.push_str(&t.text);}
 	}
     }
     
     let mut closer = i32::MAX;
-    let mut ind = -1;
-    let mut lat = 0.0;
-    let mut lon = 0.0;
     let mut j = usize::MAX;
     for i in 0..tab.len() {
 	if text.eq(&addrs[tab[i]].nom_voie) {
-	    if closer == i32::MAX {
-		j=tab[i];
-		lat = addrs[tab[i]].lat;
-		lon = addrs[tab[i]].lon;
-	    }
+	    if closer == i32::MAX {j=tab[i];}
 	    match addrs[tab[i]].numero {
 		Some(n) => {
-		    if n==num {
-			j=tab[i];
-			return Some((addrs[tab[i]].lat,addrs[tab[i]].lon,n,text,sim_street));
-		    }
 		    if (n-num).abs()<closer {
 			j=tab[i];
-			ind=n;
 			closer = (n-num).abs();
-			lat = addrs[tab[i]].lat;
-			lon = addrs[tab[i]].lon;
+			if closer== 0 {break;}
 		    }
 		},
 		None=>{}
 	    }
 	}
     }
-    return Some((lat,lon,ind,text,sim_street));
+    return Some(j);
 }
 
 
 
 fn get_iris_adresses(r:&Patient,iris:&Vec<Maille>,addrs:&Vec<Adresse2>) -> Option<Maille> {
-    let res = r.PST_CP.parse::<i32>();
-    match res {
-	Ok(cp) => {
-	    let (num,street)=extract_info(&r.PST_ADRESSE);
-	    let mut city = r.PST_VILLE.to_lowercase();
-	    let re = Regex::new(r"^st ").unwrap();
-	    city.retain(|c| !r#"(),".;:'"#.contains(c));
-	    city = diacritics::remove_diacritics(&city);
-	    city = str::replace(&city,"-"," ");
-	    city = str::replace(&city," st "," saint ");
-	    city = re.replace(&city,"saint ").into_owned();
+    let cp = match r.PST_CP.parse::<i32>() {
+	Ok(cp) =>cp,
+	Err(_) => 0};
+    let (num,street)=extract_info(&r.PST_ADRESSE);
+    let mut city = r.PST_VILLE.to_lowercase();
+    let re = Regex::new(r"^st ").unwrap();
+    city.retain(|c| !r#"(),".;:'"#.contains(c));
+    city = diacritics::remove_diacritics(&city);
+    city = str::replace(&city,"-"," ");
+    city = str::replace(&city," st "," saint ");
+    city = re.replace(&city,"saint ").into_owned();
+    
+    println!("{:} {:} {:} {:}",num,street,cp,city);
 
-	    println!("{:} {:} {:} {:}",num,street,cp,city);
-	    let res = get_addrs(street,num,cp,city,addrs);
-	    match res {
-		Some((lat,lon,num,text,sim)) => {
-		    println!("{:} {:} {:} {:} {:}",lat,lon,num,text,sim);
-		    let p = Point::new (lon,lat);
-		    for i in 0..iris.len() {
-			if iris[i].geom.contains(&p) {
-			    return Some(iris[i].clone());
-			}
-		    }
-		},
-		None => {}
+
+    let res = get_addrs(street,num,cp,city,addrs);
+    match res {
+	Some(j) => {
+	    println!("{:?}",addrs[j]);
+	    let p = Point::new (addrs[j].lon,addrs[j].lat);
+	    for i in 0..iris.len() {
+		if iris[i].geom.contains(&p) {
+		    return Some(iris[i].clone());
+		}
 	    }
-	    
 	},
-	Err (_) => {}
-    }
+	None => {}
+}
+
     return None;
 }
+
 
 #[allow(dead_code)]
 fn read_from_csv2(iris:Vec<Maille>,addrs:Vec<Adresse2>) -> () {
@@ -468,25 +412,6 @@ fn read_from_csv2(iris:Vec<Maille>,addrs:Vec<Adresse2>) -> () {
 	    Some(v) => {println!("DCOM_IRIS: {:?}",v.dcomiris);},
 	    None => {println!("Address not found");},
 	}
-    }
-}
-
-#[allow(dead_code)]
-fn read_from_csv(iris:Vec<Maille>,osm:Openstreetmap) -> () {
-    let csv = read_csv();
-    for i in 0..csv.len() {
-	println!("{:?}",csv[i]);
-	let addr = build_address(&csv[i]);
-	println!("{:?}",addr);
-	let now = Instant::now();
-	let res = get_iris(&addr,&iris,&osm);
-	println!("osm address request duration : {:?}", now.elapsed());
-	match res {
-	    Some(v) => {println!("DCOM_IRIS: {:?}",v.dcomiris);},
-	    None => {println!("Address not found");},
-	}
-	let tm = time::Duration::from_millis(1100);
-	thread::sleep(tm);
     }
 }
 
@@ -513,10 +438,44 @@ fn main() {
     //    let osm = Openstreetmap::new();
     //    read_from_stdin(iris,osm);
     //    read_from_csv(iris,osm);
+    
+   //  let mut addrs = Vec::new();
+
     let mut addrs = read_adresses2();
-    //    let mut addrs = Vec::new();
     addrs=clean_adresses(addrs);
+
     read_from_csv2(iris,addrs);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+#[allow(dead_code)]
+fn read_from_csv(iris:Vec<Maille>,osm:Openstreetmap) -> () {
+    let csv = read_csv();
+    for i in 0..csv.len() {
+	println!("{:?}",csv[i]);
+	let addr = build_address(&csv[i]);
+	println!("{:?}",addr);
+	let now = Instant::now();
+	let res = get_iris(&addr,&iris,&osm);
+	println!("osm address request duration : {:?}", now.elapsed());
+	match res {
+	    Some(v) => {println!("DCOM_IRIS: {:?}",v.dcomiris);},
+	    None => {println!("Address not found");},
+	}
+	let tm = time::Duration::from_millis(1100);
+	thread::sleep(tm);
+    }
 }
 
 // Adresses au format AITF BAL 1.3 dans fichier csv
@@ -568,4 +527,54 @@ fn read_adresses() -> Vec<Adresse> {
     }
     println!("Addresses read and parsed in {:?}, {:} records, {:} invalid records", now.elapsed(),nb,nbi);
     return tab;
+}
+
+
+fn get_iris(buffer:&String,iris:&Vec<Maille>,osm:&Openstreetmap) -> Option<Maille> {
+    let res = osm.forward(&buffer);
+    let p:Vec<Point<f64>> = res.unwrap();
+    if p.len()>0 {
+	for i in 0..iris.len() {
+	    if iris[i].geom.contains(&p[0]) {return Some(iris[i].clone());}
+	}
+    }
+    return None;
+}
+
+#[allow(dead_code)]
+fn read_from_stdin(iris:Vec<Maille>,osm:Openstreetmap) -> () {
+    let stdin = io::stdin();
+    let mut buffer = String::new();
+    loop {
+	print!("Enter address:");
+	io::stdout().flush().unwrap();
+	buffer.clear();
+	match stdin.read_line(&mut buffer) {
+	    Ok(_) => {
+		let now = Instant::now();
+		let res = get_iris(&buffer,&iris,&osm);
+		println!("osm address request duration : {:?}", now.elapsed());
+		match res {
+		    Some(v) => {println!("{:?}",v);},
+		    None => {println!("Address not found");},
+		}
+		let tm = time::Duration::from_millis(1100);
+		thread::sleep(tm);
+	    },
+	    _ => {panic!("Invalid string")}
+	}
+    }
+}
+
+#[allow(dead_code)]
+fn build_address(r:&Patient)-> String {
+    let v = ",";
+    let mut buffer = String::new();
+    buffer.push_str(&r.PST_ADRESSE);
+    buffer.push_str(v);
+    buffer.push_str(&r.PST_CP);
+    buffer.push_str(v);
+    buffer.push_str(&r.PST_VILLE);
+    let res = buffer.to_lowercase();
+    return res;
 }
