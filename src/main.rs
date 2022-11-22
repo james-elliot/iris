@@ -7,12 +7,12 @@ use geo::algorithm::contains::Contains;
 use std::{thread, time, io};
 use std::time::Instant;
 use std::io::Write;
-use serde::Deserialize;
+use serde::{Serialize,Deserialize};
 use std::fs::File;
 use csv::ReaderBuilder;
 
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[allow(dead_code)]
 struct Adresse2 {
 //    id:String,
@@ -433,6 +433,8 @@ fn clean_adresses(mut a:Vec<Adresse2>) -> Vec<Adresse2> {
     return a;
 }
 
+use rmp_serde;
+use bincode;
 fn main() {
     let iris = read_iris();
     //    let osm = Openstreetmap::new();
@@ -441,10 +443,57 @@ fn main() {
     
    //  let mut addrs = Vec::new();
 
+
+    /*
     let mut addrs = read_adresses2();
     addrs=clean_adresses(addrs);
+     */
 
-    read_from_csv2(iris,addrs);
+    
+    /*
+    {
+	let file_path = "adresses-france2.bin";
+	let mut file = File::create(file_path).unwrap();
+	let res = rmp_serde::encode::write(&mut file,&addrs);
+    }
+     */
+
+    /*
+    {
+	let now = Instant::now();
+	let file_path = "adresses-france2.bin";
+	let mut file = File::create(file_path).unwrap();
+	bincode::serialize_into(&mut file,&addrs).unwrap();
+	println!("{:?}",now.elapsed());
+    }
+     */
+
+    /*
+    let file_path = "adresses-france2.bin";
+    let mut file = File::open(file_path).unwrap();
+    let res = rmp_serde::decode::from_read(&mut file);
+    match res {
+	Ok(addrs) => {
+	    read_from_csv2(iris,addrs);
+	},
+	Err (_) => {}
+    }
+     */
+
+
+    let now = Instant::now();
+    let file_path = "adresses-france2.bin";
+    let mut file = File::open(file_path).unwrap();
+    let res = bincode::deserialize_from(&mut file);
+    println!("{:?}",now.elapsed());
+    match res {
+	Ok(addrs) => {
+	    read_from_csv2(iris,addrs);
+	},
+	Err (_) => {}
+    }
+
+    
 }
 
 
