@@ -11,56 +11,6 @@ use serde::Deserialize;
 use std::fs::File;
 use csv::ReaderBuilder;
 
-// Adresses au format AITF BAL 1.3 dans fichier csv
-// Recuperables sur https://addresse.data.gouv.fr
-// Contient environ 26 millions d'adresses
-// 9Go nécessaires pour stocker le fichier en mémoire
-#[derive(Debug, Deserialize, Clone)]
-#[allow(dead_code)]
-struct Adresse {
-//    uid_adresse:String,
-//    cle_interop:String,
-    commune_insee:String,
-    commune_nom:String,
-//    commune_deleguee_insee:String,
-//    commune_deleguee_nom:String,
-    voie_nom:String,
-    lieudit_complement_nom:String,
-    numero:String,
-    suffixe:String,
-//    position:String,
-//    x:String,
-//    y:String,
-    long:f64,
-    lat:f64,
-//    cad_parcelles:String,
-//    source:String,
-//    date_der_maj:String,
-//    certification_commune : String
-}
-
-#[allow(dead_code)]
-fn read_adresses() -> Vec<Adresse> {
-    let now = Instant::now();
-    let mut tab = Vec::new();
-    let file_path = "adresses-france.csv";
-    let file = File::open(file_path).unwrap();
-    let mut rdr = ReaderBuilder::new()
-        .delimiter(b';')
-        .from_reader(file);
-    let mut nbi = 0;
-    let mut nb = 0;
-    for result in rdr.deserialize() {
-	nb=nb+1;
-	match result {
-	    Ok(record) => {tab.push(record);},
-//	    Err (_) =>{println!("{:?}",result);}
-	    Err (_) =>{nbi=nbi+1;}
-	}
-    }
-    println!("Addresses read and parsed in {:?}, {:} records, {:} invalid records", now.elapsed(),nb,nbi);
-    return tab;
-}
 
 #[derive(Debug, Deserialize, Clone)]
 #[allow(dead_code)]
@@ -394,7 +344,8 @@ fn find_vec_city(addrs:&Vec<Adresse2>,cp:i32,city:String,v:&mut Vec<usize>) -> b
 use ngrammatic::{CorpusBuilder, Pad};
 use rust_fuzzy_search::fuzzy_compare;
 fn get_addrs(street:String,num:i32,cp:i32,city:String,addrs:&Vec<Adresse2>)->Option<(f64,f64,i32,String,f32)> {
-    let mut similarity = 0.0;
+    let mut sim_street = 0.0;
+    let mut sim_city = 1.0;
     let mut text = String::new();
     let mut tab = Vec::new();
     let res = find_first_last_cp(addrs,cp,&mut tab);
@@ -412,12 +363,12 @@ fn get_addrs(street:String,num:i32,cp:i32,city:String,addrs:&Vec<Adresse2>)->Opt
 	}
 	let results = corpus.search(&street, 0.8);
 	match results.first() {
-	    Some(t) => {text.push_str(&t.text);similarity=t.similarity;},
-	    None => {}
+	    Some(t) => {text.push_str(&t.text);sim_street=t.similarity;},
+	    None => {},
 	}
     }
 
-    if similarity == 0.0 {
+    if sim_street == 0.0 {
 	println!("Trying city search");
 	tab.clear();
 	let res = find_vec_city(addrs,cp,city,&mut tab);
@@ -432,22 +383,30 @@ fn get_addrs(street:String,num:i32,cp:i32,city:String,addrs:&Vec<Adresse2>)->Opt
 	let results = corpus.search(&street, 0.8);
 	match results.first() {
 	    None => {return None;},
-	    Some(t) => {text.push_str(&t.text);similarity=t.similarity;}
+	    Some(t) => {text.push_str(&t.text);sim_street=t.similarity;}
 	}
     }
     
-    let mut closer = 1000000;
+    let mut closer = i32::MAX;
     let mut ind = -1;
     let mut lat = 0.0;
     let mut lon = 0.0;
+    let mut j = usize::MAX;
     for i in 0..tab.len() {
 	if text.eq(&addrs[tab[i]].nom_voie) {
+	    if closer == i32::MAX {
+		j=tab[i];
+		lat = addrs[tab[i]].lat;
+		lon = addrs[tab[i]].lon;
+	    }
 	    match addrs[tab[i]].numero {
 		Some(n) => {
 		    if n==num {
-			return Some((addrs[tab[i]].lat,addrs[tab[i]].lon,n,text,similarity));
+			j=tab[i];
+			return Some((addrs[tab[i]].lat,addrs[tab[i]].lon,n,text,sim_street));
 		    }
 		    if (n-num).abs()<closer {
+			j=tab[i];
 			ind=n;
 			closer = (n-num).abs();
 			lat = addrs[tab[i]].lat;
@@ -458,12 +417,7 @@ fn get_addrs(street:String,num:i32,cp:i32,city:String,addrs:&Vec<Adresse2>)->Opt
 	    }
 	}
     }
-    if lat!=0. {
-	return Some((lat,lon,ind,text,similarity));
-    }
-    else {
-	return Some((addrs[tab[0]].lat,addrs[tab[0]].lon,ind,text,similarity));
-    }
+    return Some((lat,lon,ind,text,sim_street));
 }
 
 
@@ -563,4 +517,55 @@ fn main() {
     //    let mut addrs = Vec::new();
     addrs=clean_adresses(addrs);
     read_from_csv2(iris,addrs);
+}
+
+// Adresses au format AITF BAL 1.3 dans fichier csv
+// Recuperables sur https://addresse.data.gouv.fr
+// Contient environ 26 millions d'adresses
+// 9Go nécessaires pour stocker le fichier en mémoire
+#[derive(Debug, Deserialize, Clone)]
+#[allow(dead_code)]
+struct Adresse {
+//    uid_adresse:String,
+//    cle_interop:String,
+    commune_insee:String,
+    commune_nom:String,
+//    commune_deleguee_insee:String,
+//    commune_deleguee_nom:String,
+    voie_nom:String,
+    lieudit_complement_nom:String,
+    numero:String,
+    suffixe:String,
+//    position:String,
+//    x:String,
+//    y:String,
+    long:f64,
+    lat:f64,
+//    cad_parcelles:String,
+//    source:String,
+//    date_der_maj:String,
+//    certification_commune : String
+}
+
+#[allow(dead_code)]
+fn read_adresses() -> Vec<Adresse> {
+    let now = Instant::now();
+    let mut tab = Vec::new();
+    let file_path = "adresses-france.csv";
+    let file = File::open(file_path).unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .delimiter(b';')
+        .from_reader(file);
+    let mut nbi = 0;
+    let mut nb = 0;
+    for result in rdr.deserialize() {
+	nb=nb+1;
+	match result {
+	    Ok(record) => {tab.push(record);},
+//	    Err (_) =>{println!("{:?}",result);}
+	    Err (_) =>{nbi=nbi+1;}
+	}
+    }
+    println!("Addresses read and parsed in {:?}, {:} records, {:} invalid records", now.elapsed(),nb,nbi);
+    return tab;
 }
