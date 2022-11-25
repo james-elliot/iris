@@ -59,7 +59,7 @@ fn read_adresses(file_path: &str) -> Vec<Adresse> {
     }
     println!("Addresses read and parsed in {:?}, {:} records, {:} invalid records", now.elapsed(),nb,nbi);
     let now = Instant::now();
-    tab.sort_by(|a, b| a.code_postal.cmp(&b.code_postal));
+    tab.sort_unstable_by(|a, b| a.code_postal.cmp(&b.code_postal));
     println!("Addresses sorted in {:?}", now.elapsed());
     tab
 }
@@ -96,17 +96,13 @@ struct Maille {
 fn read_iris() -> Vec<Maille> {
     let now = Instant::now();
     let contents = fs::read_to_string("indice-de-defavorisation-sociale-fdep-par-iris.geojson")
-	.expect("Something went wrong reading the file");
-    println!("Iris database read in {:?}", now.elapsed());
-    let now = Instant::now();
+	.expect("Something went wrong reading the Iris file");
     let geojson = contents.parse::<GeoJson>().unwrap();
-    println!("Iris database parsed in {:?}", now.elapsed());
     let mut tab = Vec::new();
     match geojson {
         GeoJson::FeatureCollection(ctn) => {
 	    let f = ctn.features;
             println!("Found {} features", f.len());
-	    let now = Instant::now();
 	    for a in &f {
 		let dcomiris = a.property("c_dcomiris").map(|v| v.as_str().unwrap().to_string());
 		let tx_chom  = a.property("t1_txchom0").map(|v| v.as_f64().unwrap());
@@ -114,10 +110,10 @@ fn read_iris() -> Vec<Maille> {
 		let pop  = a.property("t1_p09_pop").map(|v| v.as_i64().unwrap());
 		let tx_bac  = a.property("t1_txbac09").map(|v| v.as_f64().unwrap());
 		let rev_med  = a.property("t1_rev_med").map(|v| v.as_f64().unwrap());
-		let geom : Geometry<f64> = a.geometry.clone().unwrap().try_into().unwrap();
+		let geom : Geometry<f64> = a.geometry.as_ref().unwrap().try_into().unwrap();
 		tab.push(Maille {geom,dcomiris,pop,rev_med,tx_bac,tx_chom,tx_ouvr});
 	    }
-	    println!("Iris structs built in {:?}", now.elapsed());
+	    println!("Iris database built in {:?}", now.elapsed());
 	}
 	_ => panic!("No collection in Iris database")
     }
@@ -125,8 +121,8 @@ fn read_iris() -> Vec<Maille> {
 }
 
 fn find_voies (v:&str) -> (String,String) {
-//    println!("Submitted:{:}",v);
-    let voies = [
+    //    println!("Submitted:{:}",v);
+    static VOIES:[(&str, &str); 14] = [
 	(r"\brue\b","rue"),
 	(r"\bavenue\b","avenue"),
 	(r"\bboulevard\b","boulevard"),
@@ -142,32 +138,37 @@ fn find_voies (v:&str) -> (String,String) {
 	(r"\bpassage\b","passage"),
 	(r"\bchemin\b","chemin"),
     ];
-    for (a,b) in &voies {
-	let re = Regex::new(a).unwrap();
-	if let Some(m) = re.find(v) {
-	    let start = m.start();
-	    let end = m.end();
-	    let first = v[0..start].to_owned();
-	    let mut last = b.to_string();
-	    last.push_str(&v[end..]);
-	    return (first,last)
-	}
+    lazy_static! {
+	static ref T:[Vec<Regex>;2]={
+	    let mut t1 = Vec::new();
+	    let mut t2 = Vec::new();
+	    for a in &VOIES {
+		let re = Regex::new(a.0).unwrap();
+		t1.push(re);
+		let re = Regex::new(&a.0[2..]).unwrap();
+		t2.push(re);
+	    }
+	    [t1,t2]
+	};
     }
-    for (a,b) in &voies {
-	let re = Regex::new(&a[2..]).unwrap();
-	if let Some(m) = re.find(v) {
-	    let start = m.start();
-	    let end = m.end();
-	    let first = v[0..start].to_owned();
-	    let mut last = b.to_string();
-	    last.push_str(&v[end..]);
-	    return (first,last)
+    for i in 0..T.len() {
+	for (j,re) in T[i].iter().enumerate() {
+	    if let Some(m) = re.find(v) {
+		let start = m.start();
+		let end = m.end();
+		if i==0 || (start > 0 && v.chars().nth(start-1).unwrap().is_ascii_digit()) {
+		    let first = v[0..start].to_owned();
+		    let mut last = VOIES[j].1.to_string();
+		    last.push_str(&v[end..]);
+		    return (first,last)
+		}
+	    }
 	}
     }
     (v.to_owned(),"".to_owned())
 }
 
-fn find_num(v: &String) -> i32 {
+fn find_num(v: &str) -> i32 {
     for i in (0..v.len()).rev() {
 	let c = v.chars().nth(i).unwrap();
 	if c.is_ascii_digit() {
@@ -230,31 +231,21 @@ fn extract_info(r:&str)-> (i32,String) {
 
 fn find_first_last_cp(addrs:&[Adresse],cp:i32,f:i32,v:&mut Vec<usize>) -> bool {
     if cp==0 {return false;}
-    let mut low = 0;
-    let mut high = addrs.len()-1;
-    let mut p = addrs.len()/2;
-    while addrs[p].code_postal/f != cp/f {
-	if low>=high {return false;}
-	if addrs[p].code_postal/f > cp/f {
-	    high = p-1;
-	    p = (p+low)/2;
+    if let Ok(p)=addrs.binary_search_by(|c| (c.code_postal/f).cmp(&(cp/f))) {
+	for i in (0..p).rev() {
+	    if addrs[i].code_postal/f != cp/f {break;}
+	    v.push(i);
 	}
-	else {
-	    low = p+1;
-	    p = (p+high)/2;
+	for (i,o) in addrs.iter().enumerate().skip(p) {
+	    if o.code_postal/f != cp/f {break;}
+	    v.push(i);
 	}
+	true
     }
-    for i in (0..p).rev() {
-	if addrs[i].code_postal/f != cp/f {break;}
-	v.push(i);
-    }
-    for (i,o) in addrs.iter().enumerate().skip(p) {
-	if o.code_postal/f != cp/f {break;}
-	v.push(i);
-    }
-    true
+    else {false}
 }
 
+#[allow(dead_code)]
 fn find_vec_city(addrs:&[Adresse],cp:i32,city:String,v:&mut Vec<usize>) -> bool {
     for (i,o) in addrs.iter().enumerate() {
 	if city.eq(&o.nom_commune) && (cp==0 || (cp/1000)==(o.code_postal/1000)) {v.push(i);}
@@ -269,7 +260,7 @@ fn get_addrs(street:String,num:i32,cp:i32,city:String,addrs:&[Adresse])->Option<
 	let mut corpus = CorpusBuilder::new().arity(2).pad_full(Pad::Auto).finish();
 	for o in &tab {
 	    let score = fuzzy_compare(&city,&addrs[*o].nom_commune);
-	    if score > 0.9 {
+	    if score > 0.8 {
 //		if score != 1. {println!("{:} {:} {}",city,addrs[*o].nom_commune,score);}
 		corpus.add_text(&addrs[*o].nom_voie);
 	    }
@@ -288,6 +279,7 @@ fn get_addrs(street:String,num:i32,cp:i32,city:String,addrs:&[Adresse])->Option<
 	}
 	if let Some(t)=corpus.search(&street, 0.8).first() {text.push_str(&t.text);}
     }
+    /*
     if text.is_empty() {
 	println!("Trying country search");
 	tab.clear();
@@ -297,7 +289,8 @@ fn get_addrs(street:String,num:i32,cp:i32,city:String,addrs:&[Adresse])->Option<
 	    let results = corpus.search(&street, 0.8);
 	    if let Some(t) = results.first() {text.push_str(&t.text);}
 	}
-    }
+}
+    */
     if text.is_empty() {return None;}
     let mut closer = i32::MAX;
     let mut j = usize::MAX;
@@ -339,7 +332,7 @@ fn get_iris_adresses(r:&Patient,iris:&[Maille],addrs:&[Adresse]) -> Option<Maill
     let cp = r.PST_CP.parse::<i32>().unwrap_or(0);
     let (num,street) = extract_info(&r.PST_ADRESSE);
     let city = normalize_city(&r.PST_VILLE);
-    println!("{:} {:} {:} {:}",num,street,cp,city);
+    println!("normalized: {:} {:} {:} {:}",num,street,cp,city);
     if let Some(j) = get_addrs(street,num,cp,city,addrs) {
 	println!("{:?}",addrs[j]);
 	let p = Point::new (addrs[j].lon,addrs[j].lat);
@@ -360,7 +353,7 @@ fn find_iris(filename:&str,iris:&[Maille],addrs:&[Adresse]) {
     for o in csv {
 	println!("{:?}",o);
 	let now = Instant::now();
-	let res = get_iris_adresses(&o,&iris,&addrs);
+	let res = get_iris_adresses(&o,iris,addrs);
 	println!("Searched for {:?}", now.elapsed());
 	match res {
 	    Some(v) => {println!("DCOM_IRIS: {:?}",v.dcomiris);},
@@ -369,17 +362,6 @@ fn find_iris(filename:&str,iris:&[Maille],addrs:&[Adresse]) {
     }
 }
 
-/*
-fn clean_adresses(mut a:Vec<Adresse>) -> Vec<Adresse> {
-    let now = Instant::now();
-    for o in &mut a {
-	o.nom_voie = normalize_street(&o.nom_voie);
-	o.nom_commune = normalize_city(&o.nom_commune);
-    }
-    println!("Addresses cleaned in {:?}", now.elapsed());
-    a
-}
-*/
 fn clean_adresses(a:&mut [Adresse]){
     let now = Instant::now();
     for o in a {
