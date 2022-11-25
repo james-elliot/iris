@@ -18,3 +18,5 @@ ngrammatic = "0.4.0"
 rust-fuzzy-search = "0.1.1"
 rmp-serde = "1.1.1"
 bincode = "1.3.3"
+lazy_static = "1.4.0"
+
