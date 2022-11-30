@@ -368,12 +368,14 @@ fn get_iris_adresses(r:&Patient,iris:&[Maille],addrs:&[Adresse]) -> Option<Upati
 	let p = Point::new (addrs[j].lon,addrs[j].lat);
 	for o in iris {
 	    if o.geom.contains(&p) {
+		let mut addr = addrs[j].nom_voie.clone();
+		if num !=0 {addr = num.to_string() + " " + &addr.to_owned();}
 		let v = Upatient {
 		    patient: r.N_PATIENT.clone(),
 		    adresse: r.PST_ADRESSE.clone(),
 		    cp: r.PST_CP.clone(),
 		    ville: r.PST_VILLE.clone(),
-		    n_adresse: addrs[j].nom_voie.clone(),
+		    n_adresse: addr,
 		    n_cp: addrs[j].code_postal,
 		    n_ville: addrs[j].nom_commune.clone(),
 		    iris: o.dcomiris.clone().unwrap(),
