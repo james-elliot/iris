@@ -9,7 +9,7 @@ use std::io::{BufWriter,BufReader};
 use std::time::{Instant,SystemTime};
 use serde::{Serialize,Deserialize};
 use std::fs::File;
-use csv::ReaderBuilder;
+use csv::{ReaderBuilder,WriterBuilder};
 use ngrammatic::{CorpusBuilder, Pad};
 use rust_fuzzy_search::fuzzy_compare;
 use regex::Regex;
@@ -64,7 +64,7 @@ fn read_adresses(file_path: &str) -> Vec<Adresse> {
     tab
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[allow(dead_code,non_snake_case)]
 struct Patient {
     N_PATIENT: String,
@@ -73,12 +73,44 @@ struct Patient {
     PST_VILLE: String
 }
 
+#[derive(Debug, Clone, Serialize)]
+struct Upatient {
+    patient: String,
+    adresse: String,
+    cp: String,
+    ville: String,
+    n_adresse: String,
+    n_cp: i32,
+    n_ville: String,
+    iris: String,
+    s_ville: f32,
+    s_adresse: f32
+}
+
 fn read_patients(file_path: &str) -> Vec<Patient> {
     let mut tab = Vec::new();
     let file = File::open(file_path).unwrap();
     let mut rdr = ReaderBuilder::new().delimiter(b';').from_reader(file);
     for result in rdr.deserialize() {tab.push(result.unwrap());}
     tab
+}
+
+fn write_patients(file_path: &str,v:Vec<Patient>) {
+    let file = File::create(file_path).unwrap();
+    let mut wrt = WriterBuilder::new().delimiter(b';').from_writer(file);
+    for o in v {
+	wrt.serialize(&o).unwrap();
+    }
+    wrt.flush().unwrap();
+}
+
+fn write_upatients(file_path: &str,v:Vec<Upatient>) {
+    let file = File::create(file_path).unwrap();
+    let mut wrt = WriterBuilder::new().delimiter(b';').from_writer(file);
+    for o in v {
+	wrt.serialize(&o).unwrap();
+    }
+    wrt.flush().unwrap();
 }
 
 #[derive(Debug,Clone)]
@@ -253,49 +285,46 @@ fn find_vec_city(addrs:&[Adresse],cp:i32,city:String,v:&mut Vec<usize>) -> bool 
     ! v.is_empty()
 }
 
-fn get_addrs(street:String,num:i32,cp:i32,city:String,addrs:&[Adresse])->Option<usize> {
+fn get_addrs(street:&String,num:i32,cp:i32,city:&String,addrs:&[Adresse])->Option<usize> {
     let mut text = String::new();
+    let mut ind = 0;
     let mut tab = Vec::new();
+    let mut ntab = Vec::new();
     if find_first_last_cp(addrs,cp,1,&mut tab)  {
-	let mut corpus = CorpusBuilder::new().arity(2).pad_full(Pad::Auto).finish();
-	for o in &tab {
-	    let score = fuzzy_compare(&city,&addrs[*o].nom_commune);
-	    if score > 0.8 {
-//		if score != 1. {println!("{:} {:} {}",city,addrs[*o].nom_commune,score);}
-		corpus.add_text(&addrs[*o].nom_voie);
+	ind = *tab.iter().max_by_key(
+	    |x| (100.0*fuzzy_compare(&city,&addrs[**x].nom_commune)) as i64
+	).unwrap();
+	if fuzzy_compare(&city,&addrs[ind].nom_commune) > 0.8 {
+	    let mut corpus = CorpusBuilder::new().arity(2).pad_full(Pad::Auto).finish();
+	    for o in &tab {
+		if addrs[ind].nom_commune.eq(&addrs[*o].nom_commune) {
+		    corpus.add_text(&addrs[*o].nom_voie);
+		    ntab.push(*o);
+		}
 	    }
+	    if let Some(t)=corpus.search(&street, 0.8).first() {text.push_str(&t.text);}
 	}
-	if let Some(t)=corpus.search(&street, 0.8).first() {text.push_str(&t.text);}
     }
     if text.is_empty() && find_first_last_cp(addrs,cp,1000,&mut tab)  {
-	println!("Trying dpt search");
-	let mut corpus = CorpusBuilder::new().arity(2).pad_full(Pad::Auto).finish();
-	for o in &tab {
-	    let score = fuzzy_compare(&city,&addrs[*o].nom_commune);
-	    if score > 0.9 {
-//		if score != 1. {println!("{:} {:} {}",city,addrs[*o].nom_commune,score);}
-		corpus.add_text(&addrs[*o].nom_voie);
-	    }
-	}
-	if let Some(t)=corpus.search(&street, 0.8).first() {text.push_str(&t.text);}
-    }
-    /*
-    if text.is_empty() {
-	println!("Trying country search");
-	tab.clear();
-	if find_vec_city(addrs,cp,city,&mut tab) {
+	ind = *tab.iter().max_by_key(
+	    |x| (100.0*fuzzy_compare(&city,&addrs[**x].nom_commune)) as i64
+	).unwrap();
+	if fuzzy_compare(&city,&addrs[ind].nom_commune) > 0.8 {
 	    let mut corpus = CorpusBuilder::new().arity(2).pad_full(Pad::Auto).finish();
-	    for o in &tab {corpus.add_text(&addrs[*o].nom_voie);}
-	    let results = corpus.search(&street, 0.8);
-	    if let Some(t) = results.first() {text.push_str(&t.text);}
+	    for o in &tab {
+		if addrs[ind].nom_commune.eq(&addrs[*o].nom_commune) {
+		    corpus.add_text(&addrs[*o].nom_voie);
+		    ntab.push(*o);
+		}
+	    }
+	    if let Some(t)=corpus.search(&street, 0.8).first() {text.push_str(&t.text);}
 	}
-}
-    */
+    }
     if text.is_empty() {return None;}
     let mut closer = i32::MAX;
     let mut j = usize::MAX;
-    for o in tab {
-	if text.eq(&addrs[o].nom_voie) {
+    for o in ntab {
+	if text.eq(&addrs[o].nom_voie) && addrs[ind].nom_commune.eq(&addrs[o].nom_commune) {
 	    if closer == i32::MAX {j=o;}
 	    if let Some(n) = addrs[o].numero {
 		if (n-num).abs()<closer {
@@ -318,27 +347,43 @@ fn normalize_city(city:&str)->String {
     c = diacritics::remove_diacritics(&c);
     c = str::replace(&c,"-"," ");
     c = str::replace(&c," st "," saint ");
-    RE.replace(&c,"saint ").into_owned()
+    c = RE.replace(&c,"saint ").into_owned();
+    c
 }
 
 fn normalize_street(street:&str)->String {
     let mut s = street.to_lowercase();
     s.retain(|c| !r#"(),".;:'"#.contains(c));
     s=diacritics::remove_diacritics(&s);
+    s = str::replace(&s,"-"," ");
     s
 }
 
-fn get_iris_adresses(r:&Patient,iris:&[Maille],addrs:&[Adresse]) -> Option<Maille> {
+fn get_iris_adresses(r:&Patient,iris:&[Maille],addrs:&[Adresse]) -> Option<Upatient> {
     let cp = r.PST_CP.parse::<i32>().unwrap_or(0);
     let (num,street) = extract_info(&r.PST_ADRESSE);
     let city = normalize_city(&r.PST_VILLE);
-    println!("normalized: {:} {:} {:} {:}",num,street,cp,city);
-    if let Some(j) = get_addrs(street,num,cp,city,addrs) {
-	println!("{:?}",addrs[j]);
+//    println!("normalized: {:} {:} {:} {:}",num,street,cp,city);
+    if let Some(j) = get_addrs(&street,num,cp,&city,addrs) {
+	let s_ville = fuzzy_compare(&city,&addrs[j].nom_commune);
+	let s_adresse = fuzzy_compare(&street,&addrs[j].nom_voie);
+//	println!("{:?}",addrs[j]);
 	let p = Point::new (addrs[j].lon,addrs[j].lat);
 	for o in iris {
 	    if o.geom.contains(&p) {
-		return Some(o.clone());
+		let v = Upatient {
+		    patient: r.N_PATIENT.clone(),
+		    adresse: r.PST_ADRESSE.clone(),
+		    cp: r.PST_CP.clone(),
+		    ville: r.PST_VILLE.clone(),
+		    n_adresse: addrs[j].nom_voie.clone(),
+		    n_cp: addrs[j].code_postal,
+		    n_ville: addrs[j].nom_commune.clone(),
+		    iris: o.dcomiris.clone().unwrap(),
+		    s_ville,
+		    s_adresse
+		};
+		return Some(v);
 	    }
 	}
     }
@@ -348,7 +393,9 @@ fn get_iris_adresses(r:&Patient,iris:&[Maille],addrs:&[Adresse]) -> Option<Maill
 
 #[allow(dead_code)]
 fn find_iris(filename:&str,iris:&[Maille],addrs:&[Adresse]) {
-//    fn find_iris(filename:&str,iris:Vec<Maille>,addrs:Vec<Adresse>) {
+    let mut tab_ok = Vec::new();
+    let mut tab_sok = Vec::new();
+    let mut tab_nok = Vec::new();
     let csv = read_patients(filename);
     for o in csv {
 	println!("{:?}",o);
@@ -356,10 +403,20 @@ fn find_iris(filename:&str,iris:&[Maille],addrs:&[Adresse]) {
 	let res = get_iris_adresses(&o,iris,addrs);
 	println!("Searched for {:?}", now.elapsed());
 	match res {
-	    Some(v) => {println!("DCOM_IRIS: {:?}",v.dcomiris);},
-	    None => {println!("Address not found");},
+	    Some(v) => {
+		println!("{:?}",v);
+		if v.s_ville==1. && v.s_adresse==1. {tab_ok.push(v);}
+		else {tab_sok.push(v);}
+	    },
+	    None => {
+		println!("Address not found");
+		tab_nok.push(o);
+	    },
 	}
     }
+    write_patients("nok.csv",tab_nok);
+    write_upatients("sok.csv",tab_sok);
+    write_upatients("ok.csv",tab_ok);
 }
 
 fn clean_adresses(a:&mut [Adresse]){
