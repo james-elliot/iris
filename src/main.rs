@@ -321,20 +321,17 @@ fn get_addrs(street:&String,num:i32,cp:i32,city:&String,addrs:&[Adresse])->Optio
 	}
     }
     if text.is_empty() {return None;}
-    let mut closer = i32::MAX;
-    let mut j = usize::MAX;
-    for o in ntab {
-	if text.eq(&addrs[o].nom_voie) && addrs[ind].nom_commune.eq(&addrs[o].nom_commune) {
-	    if closer == i32::MAX {j=o;}
-	    if let Some(n) = addrs[o].numero {
-		if (n-num).abs()<closer {
-		    j=o;
-		    closer = (n-num).abs();
-		    if closer== 0 {break;}
+    let j = *ntab.iter().min_by_key(
+	|x| {
+	    if text.eq(&addrs[**x].nom_voie) && addrs[ind].nom_commune.eq(&addrs[**x].nom_commune) {
+		match addrs[**x].numero {
+		    Some(n) => {(n-num).abs()},
+		    None => i32::MAX
 		}
 	    }
+	    else {i32::MAX}
 	}
-    }
+	).unwrap();
     Some(j)
 }
 
