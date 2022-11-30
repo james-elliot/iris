@@ -285,16 +285,16 @@ fn find_vec_city(addrs:&[Adresse],cp:i32,city:String,v:&mut Vec<usize>) -> bool 
     ! v.is_empty()
 }
 
-fn get_addrs(street:&String,num:i32,cp:i32,city:&String,addrs:&[Adresse])->Option<usize> {
+fn get_addrs(street:&str,num:i32,cp:i32,city:&str,addrs:&[Adresse])->Option<usize> {
     let mut text = String::new();
     let mut ind = 0;
     let mut tab = Vec::new();
     let mut ntab = Vec::new();
     if find_first_last_cp(addrs,cp,1,&mut tab)  {
 	ind = *tab.iter().max_by_key(
-	    |x| (100.0*fuzzy_compare(&city,&addrs[**x].nom_commune)) as i64
+	    |x| (100.0*fuzzy_compare(city,&addrs[**x].nom_commune)) as i64
 	).unwrap();
-	if fuzzy_compare(&city,&addrs[ind].nom_commune) > 0.8 {
+	if fuzzy_compare(city,&addrs[ind].nom_commune) > 0.8 {
 	    let mut corpus = CorpusBuilder::new().arity(2).pad_full(Pad::Auto).finish();
 	    for o in &tab {
 		if addrs[ind].nom_commune.eq(&addrs[*o].nom_commune) {
@@ -302,14 +302,14 @@ fn get_addrs(street:&String,num:i32,cp:i32,city:&String,addrs:&[Adresse])->Optio
 		    ntab.push(*o);
 		}
 	    }
-	    if let Some(t)=corpus.search(&street, 0.8).first() {text.push_str(&t.text);}
+	    if let Some(t)=corpus.search(street, 0.8).first() {text.push_str(&t.text);}
 	}
     }
     if text.is_empty() && find_first_last_cp(addrs,cp,1000,&mut tab)  {
 	ind = *tab.iter().max_by_key(
-	    |x| (100.0*fuzzy_compare(&city,&addrs[**x].nom_commune)) as i64
+	    |x| (100.0*fuzzy_compare(city,&addrs[**x].nom_commune)) as i64
 	).unwrap();
-	if fuzzy_compare(&city,&addrs[ind].nom_commune) > 0.8 {
+	if fuzzy_compare(city,&addrs[ind].nom_commune) > 0.8 {
 	    let mut corpus = CorpusBuilder::new().arity(2).pad_full(Pad::Auto).finish();
 	    for o in &tab {
 		if addrs[ind].nom_commune.eq(&addrs[*o].nom_commune) {
@@ -317,7 +317,7 @@ fn get_addrs(street:&String,num:i32,cp:i32,city:&String,addrs:&[Adresse])->Optio
 		    ntab.push(*o);
 		}
 	    }
-	    if let Some(t)=corpus.search(&street, 0.8).first() {text.push_str(&t.text);}
+	    if let Some(t)=corpus.search(street, 0.8).first() {text.push_str(&t.text);}
 	}
     }
     if text.is_empty() {return None;}
@@ -369,7 +369,7 @@ fn get_iris_adresses(r:&Patient,iris:&[Maille],addrs:&[Adresse]) -> Option<Upati
 	for o in iris {
 	    if o.geom.contains(&p) {
 		let mut addr = addrs[j].nom_voie.clone();
-		if num !=0 {addr = num.to_string() + " " + &addr.to_owned();}
+		if num !=0 {addr = num.to_string() + " " + &addr;}
 		let v = Upatient {
 		    patient: r.N_PATIENT.clone(),
 		    adresse: r.PST_ADRESSE.clone(),
