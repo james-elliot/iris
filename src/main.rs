@@ -46,7 +46,7 @@ struct Adresse {
 fn read_adresses(file_path: &str) -> Vec<Adresse> {
     let now = Instant::now();
     let mut tab:Vec<Adresse> = Vec::new();
-    let file = File::open(file_path).unwrap();
+    let file = File::open(file_path).expect("Can not open addresses file");
     let mut rdr = ReaderBuilder::new().delimiter(b';').from_reader(file);
     let mut nbi = 0;
     let mut nb = 0;
@@ -89,18 +89,16 @@ struct Upatient {
 
 fn read_patients(file_path: &str) -> Vec<Patient> {
     let mut tab = Vec::new();
-    let file = File::open(file_path).unwrap();
+    let file = File::open(file_path).expect("Can not open patient file");
     let mut rdr = ReaderBuilder::new().delimiter(b';').from_reader(file);
-    for result in rdr.deserialize() {tab.push(result.unwrap());}
+    for result in rdr.deserialize() {tab.push(result.expect("Error in read_patients"));}
     tab
 }
 
 fn write_patients(file_path: &str,v:Vec<Patient>) {
     let file = File::create(file_path).unwrap();
     let mut wrt = WriterBuilder::new().delimiter(b';').from_writer(file);
-    for o in v {
-	wrt.serialize(&o).unwrap();
-    }
+    for o in v {wrt.serialize(&o).unwrap();}
     wrt.flush().unwrap();
 }
 
@@ -128,8 +126,8 @@ struct Maille {
 fn read_iris() -> Vec<Maille> {
     let now = Instant::now();
     let contents = fs::read_to_string("indice-de-defavorisation-sociale-fdep-par-iris.geojson")
-	.expect("Something went wrong reading the Iris file");
-    let geojson = contents.parse::<GeoJson>().unwrap();
+	.expect("Can't read the Iris file");
+    let geojson = contents.parse::<GeoJson>().expect("Can't parse the iris file");
     let mut tab = Vec::new();
     match geojson {
         GeoJson::FeatureCollection(ctn) => {
@@ -287,51 +285,36 @@ fn find_vec_city(addrs:&[Adresse],cp:i32,city:String,v:&mut Vec<usize>) -> bool 
 
 fn get_addrs(street:&str,num:i32,cp:i32,city:&str,addrs:&[Adresse])->Option<usize> {
     let mut text = String::new();
-    let mut ind = 0;
+    let mut ind ;
     let mut tab = Vec::new();
     let mut ntab = Vec::new();
-    if find_first_last_cp(addrs,cp,1,&mut tab)  {
-	ind = *tab.iter().max_by_key(
-	    |x| (100.0*fuzzy_compare(city,&addrs[**x].nom_commune)) as i64
-	).unwrap();
-	if fuzzy_compare(city,&addrs[ind].nom_commune) > 0.8 {
-	    let mut corpus = CorpusBuilder::new().arity(2).pad_full(Pad::Auto).finish();
-	    for o in &tab {
-		if addrs[ind].nom_commune.eq(&addrs[*o].nom_commune) {
-		    corpus.add_text(&addrs[*o].nom_voie);
-		    ntab.push(*o);
+    let mut f = 1;
+    loop {
+	if find_first_last_cp(addrs,cp,f,&mut tab)  {
+	    ind = *tab.iter().max_by_key(
+		|x| (100.0*fuzzy_compare(city,&addrs[**x].nom_commune)) as i64
+	    ).unwrap();
+	    if fuzzy_compare(city,&addrs[ind].nom_commune) > 0.8 {
+		let mut corpus = CorpusBuilder::new().arity(2).pad_full(Pad::Auto).finish();
+		for o in &tab {
+		    if addrs[ind].nom_commune.eq(&addrs[*o].nom_commune) {
+			corpus.add_text(&addrs[*o].nom_voie);
+			ntab.push(*o);
+		    }
 		}
+		if let Some(t)=corpus.search(street, 0.8).first() {text.push_str(&t.text);break;}
 	    }
-	    if let Some(t)=corpus.search(street, 0.8).first() {text.push_str(&t.text);}
 	}
+	if f==1000 {return None;}
+	f = 1000;
     }
-    if text.is_empty() && find_first_last_cp(addrs,cp,1000,&mut tab)  {
-	ind = *tab.iter().max_by_key(
-	    |x| (100.0*fuzzy_compare(city,&addrs[**x].nom_commune)) as i64
-	).unwrap();
-	if fuzzy_compare(city,&addrs[ind].nom_commune) > 0.8 {
-	    let mut corpus = CorpusBuilder::new().arity(2).pad_full(Pad::Auto).finish();
-	    for o in &tab {
-		if addrs[ind].nom_commune.eq(&addrs[*o].nom_commune) {
-		    corpus.add_text(&addrs[*o].nom_voie);
-		    ntab.push(*o);
-		}
-	    }
-	    if let Some(t)=corpus.search(street, 0.8).first() {text.push_str(&t.text);}
-	}
-    }
-    if text.is_empty() {return None;}
     let j = *ntab.iter().min_by_key(
 	|x| {
-	    if text.eq(&addrs[**x].nom_voie) && addrs[ind].nom_commune.eq(&addrs[**x].nom_commune) {
-		match addrs[**x].numero {
-		    Some(n) => {(n-num).abs()},
-		    None => i32::MAX
-		}
-	    }
-	    else {i32::MAX}
+	    if text.eq(&addrs[**x].nom_voie) && addrs[ind].nom_commune.eq(&addrs[**x].nom_commune)
+	    {(addrs[**x].numero.unwrap_or(i32::MAX)-num).abs()}
+	    else {i32::MAX-num}
 	}
-	).unwrap();
+	).expect("This should never happen as text is not null");
     Some(j)
 }
 
