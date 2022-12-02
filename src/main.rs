@@ -46,7 +46,7 @@ struct Adresse {
 fn read_adresses(file_path: &str) -> Vec<Adresse> {
     let now = Instant::now();
     let mut tab:Vec<Adresse> = Vec::new();
-    let file = File::open(file_path).expect("Can not open addresses file");
+    let file = File::open(file_path).unwrap();
     let mut rdr = ReaderBuilder::new().delimiter(b';').from_reader(file);
     let mut nbi = 0;
     let mut nb = 0;
@@ -89,9 +89,9 @@ struct Upatient {
 
 fn read_patients(file_path: &str) -> Vec<Patient> {
     let mut tab = Vec::new();
-    let file = File::open(file_path).expect("Can not open patient file");
+    let file = File::open(file_path).unwrap();
     let mut rdr = ReaderBuilder::new().delimiter(b';').from_reader(file);
-    for result in rdr.deserialize() {tab.push(result.expect("Error in read_patients"));}
+    for result in rdr.deserialize() {tab.push(result.unwrap());}
     tab
 }
 
@@ -105,9 +105,7 @@ fn write_patients(file_path: &str,v:Vec<Patient>) {
 fn write_upatients(file_path: &str,v:Vec<Upatient>) {
     let file = File::create(file_path).unwrap();
     let mut wrt = WriterBuilder::new().delimiter(b';').from_writer(file);
-    for o in v {
-	wrt.serialize(&o).unwrap();
-    }
+    for o in v {wrt.serialize(&o).unwrap();}
     wrt.flush().unwrap();
 }
 
@@ -126,8 +124,8 @@ struct Maille {
 fn read_iris() -> Vec<Maille> {
     let now = Instant::now();
     let contents = fs::read_to_string("indice-de-defavorisation-sociale-fdep-par-iris.geojson")
-	.expect("Can't read the Iris file");
-    let geojson = contents.parse::<GeoJson>().expect("Can't parse the iris file");
+	.unwrap();
+    let geojson = contents.parse::<GeoJson>().unwrap();
     let mut tab = Vec::new();
     match geojson {
         GeoJson::FeatureCollection(ctn) => {
@@ -173,10 +171,8 @@ fn find_voies (v:&str) -> (String,String) {
 	    let mut t1 = Vec::new();
 	    let mut t2 = Vec::new();
 	    for a in &VOIES {
-		let re = Regex::new(a.0).unwrap();
-		t1.push(re);
-		let re = Regex::new(&a.0[2..]).unwrap();
-		t2.push(re);
+		t1.push(Regex::new(a.0).unwrap());
+		t2.push(Regex::new(&a.0[2..]).unwrap());
 	    }
 	    [t1,t2]
 	};
@@ -307,15 +303,17 @@ fn get_addrs(street:&str,num:i32,cp:i32,city:&str,addrs:&[Adresse])->Option<usiz
 	}
 	if f==1000 {return None;}
 	f = 1000;
+	ntab.clear();
     }
-    let j = *ntab.iter().min_by_key(
-	|x| {
-	    if text.eq(&addrs[**x].nom_voie) && addrs[ind].nom_commune.eq(&addrs[**x].nom_commune)
-	    {(addrs[**x].numero.unwrap_or(i32::MAX)-num).abs()}
-	    else {i32::MAX-num}
-	}
-	).expect("This should never happen as text is not null");
-    Some(j)
+    Some(
+	*ntab.iter().min_by_key(
+	    |x| {
+		if text.eq(&addrs[**x].nom_voie) && addrs[ind].nom_commune.eq(&addrs[**x].nom_commune)
+		{(addrs[**x].numero.unwrap_or(i32::MAX)-num).abs()}
+		else {i32::MAX-num}
+	    }
+	).unwrap()
+    )
 }
 
 fn normalize_city(city:&str)->String {
@@ -327,23 +325,21 @@ fn normalize_city(city:&str)->String {
     c = diacritics::remove_diacritics(&c);
     c = str::replace(&c,"-"," ");
     c = str::replace(&c," st "," saint ");
-    c = RE.replace(&c,"saint ").into_owned();
-    c
+    RE.replace(&c,"saint ").into_owned()
 }
 
 fn normalize_street(street:&str)->String {
     let mut s = street.to_lowercase();
     s.retain(|c| !r#"(),".;:'"#.contains(c));
     s=diacritics::remove_diacritics(&s);
-    s = str::replace(&s,"-"," ");
-    s
+    str::replace(&s,"-"," ")
 }
 
 fn get_iris_adresses(r:&Patient,iris:&[Maille],addrs:&[Adresse]) -> Option<Upatient> {
     let cp = r.PST_CP.parse::<i32>().unwrap_or(0);
     let (num,street) = extract_info(&r.PST_ADRESSE);
     let city = normalize_city(&r.PST_VILLE);
-//    println!("normalized: {:} {:} {:} {:}",num,street,cp,city);
+    println!("normalized: {:} {:} {:} {:}",num,street,cp,city);
     if let Some(j) = get_addrs(&street,num,cp,&city,addrs) {
 	let s_ville = fuzzy_compare(&city,&addrs[j].nom_commune);
 	let s_adresse = fuzzy_compare(&street,&addrs[j].nom_voie);
@@ -437,7 +433,6 @@ fn main() {
 	},
 	Err(_) => true
     };
-	    
 	
     let addrs = if ! res {
 	println!("Need to rebuild addresses database");
