@@ -6,7 +6,7 @@ use std::convert::TryInto;
 use std::fs;
 use geo::algorithm::contains::Contains;
 use std::io::{BufWriter,BufReader};
-use std::time::{Instant,SystemTime};
+use std::time::Instant;
 use serde::{Serialize,Deserialize};
 use std::fs::File;
 use csv::{ReaderBuilder,WriterBuilder};
@@ -123,7 +123,7 @@ struct Maille {
 
 fn read_iris() -> Vec<Maille> {
     let now = Instant::now();
-    let contents = fs::read_to_string("indice-de-defavorisation-sociale-fdep-par-iris.geojson")
+    let contents = fs::read_to_string("iris.geojson")
 	.unwrap();
     let geojson = contents.parse::<GeoJson>().unwrap();
     let mut tab = Vec::new();
@@ -421,12 +421,12 @@ fn main() {
     let meta = fs::metadata(adresses);
     let res = match meta {
 	Ok(m) => {
-	    let t1:u64 = m.created().unwrap().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
+	    let ot1 = m.modified().unwrap();
 	    let meta = fs::metadata(my_adresses);
 	    match meta {
 		Ok(m) => {
-		    let t2:u64 = m.created().unwrap().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
-		    t2>t1
+		    let ot2 = m.modified().unwrap();
+		    ot2>ot1
 		},
 		Err (_) => false
 	    }
