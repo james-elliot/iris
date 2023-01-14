@@ -110,17 +110,57 @@ fn write_upatients(file_path: &str,v:Vec<Upatient>) {
 }
 
 #[derive(Debug,Clone)]
-#[allow(dead_code)]
 struct Maille {
     geom     : Geometry<f64>,
-    pop      : Option<i64>, // Population
     dcomiris : Option<String>, // Code iris
-    rev_med  : Option<f64>, // Revenu median
-    tx_bac   : Option<f64>, // Taux de bachelier
-    tx_chom  : Option<f64>, // Taux de chomage
-    tx_ouvr  : Option<f64>  // Taux d'ouvriers
 }
 
+fn convert(c:&geo_types::Coord) -> geo_types::Coord {
+    let point = lambert::Point::new(c.x as f32, c.y as f32, 0.0)
+        .wgs84_from_meter(lambert::Zone::Lambert93)
+        .convert_unit(lambert::AngleUnit::Radian, lambert::AngleUnit::Degree);
+    geo_types::Coord{x:point.x as f64,y:point.y as f64}
+}
+
+#[allow(dead_code)]
+fn read_iris2() -> Vec<Maille> {
+    let now = Instant::now();
+    let mut tab = Vec::new();
+    let mut reader = shapefile::Reader::from_path("CONTOURS/CONTOURS-IRIS.shp").unwrap();
+    for shape_record in reader.iter_shapes_and_records() {
+	let (shape, record) = shape_record.unwrap();
+	match shape {
+	    shapefile::record::Shape::Polygon(pl) => {
+		let p: geo_types::MultiPolygon<f64> = pl.into();
+		let p2: geo_types::Polygon<f64> = p.iter().next().unwrap().clone();
+//		println!("{:?}", p2);
+		let l = p2.exterior();
+		let l2:Vec<geo_types::Coord> = l.coords().map(|x| convert(x)).collect();
+		let l3 = geo_types::LineString::new(l2);
+		let p3 = geo_types::Polygon::new(l3,vec![]);
+		let geom:geo_types::Geometry = p3.into();
+//		println!("{:?}", geom);
+		for (name, value) in record {
+		    if name.eq("CODE_IRIS") {
+			match value {
+			    shapefile::dbase::FieldValue::Character(dcomiris) => {
+//				println! ("{:?}: {:?} ", geom, v);
+				tab.push(Maille {geom,dcomiris});
+			    },
+			    _ => {}
+			}
+			break;
+		    }
+		}
+	    },
+	    _ => {}
+	}
+    }
+    println!("Iris database built in {:?}", now.elapsed());
+    tab
+}
+
+#[allow(dead_code)]
 fn read_iris() -> Vec<Maille> {
     let now = Instant::now();
     let contents = fs::read_to_string("iris.geojson")
@@ -133,13 +173,8 @@ fn read_iris() -> Vec<Maille> {
             println!("Found {} features", f.len());
 	    for a in &f {
 		let dcomiris = a.property("c_dcomiris").map(|v| v.as_str().unwrap().to_string());
-		let tx_chom  = a.property("t1_txchom0").map(|v| v.as_f64().unwrap());
-		let tx_ouvr  = a.property("t1_txouvr0").map(|v| v.as_f64().unwrap());
-		let pop  = a.property("t1_p09_pop").map(|v| v.as_i64().unwrap());
-		let tx_bac  = a.property("t1_txbac09").map(|v| v.as_f64().unwrap());
-		let rev_med  = a.property("t1_rev_med").map(|v| v.as_f64().unwrap());
 		let geom : Geometry<f64> = a.geometry.as_ref().unwrap().try_into().unwrap();
-		tab.push(Maille {geom,dcomiris,pop,rev_med,tx_bac,tx_chom,tx_ouvr});
+		tab.push(Maille {geom,dcomiris});
 	    }
 	    println!("Iris database built in {:?}", now.elapsed());
 	}
