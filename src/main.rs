@@ -1,15 +1,7 @@
-//use geocoding::{Openstreetmap, Forward, Point};
-use geocoding::Point;
-use geojson::{GeoJson};
-use geo_types::Geometry;
-use std::convert::TryInto;
-use std::fs;
-use geo::algorithm::contains::Contains;
-use std::io::{BufWriter,BufReader};
+use geo::Contains;
 use std::time::Instant;
 use serde::{Serialize,Deserialize};
 use std::fs::File;
-use csv::{ReaderBuilder,WriterBuilder};
 use ngrammatic::{CorpusBuilder, Pad};
 use rust_fuzzy_search::fuzzy_compare;
 use regex::Regex;
@@ -47,7 +39,7 @@ fn read_adresses(file_path: &str) -> Vec<Adresse> {
     let now = Instant::now();
     let mut tab:Vec<Adresse> = Vec::new();
     let file = File::open(file_path).unwrap();
-    let mut rdr = ReaderBuilder::new().delimiter(b';').from_reader(file);
+    let mut rdr = csv::ReaderBuilder::new().delimiter(b';').from_reader(file);
     let mut nbi = 0;
     let mut nb = 0;
     for result in rdr.deserialize() {
@@ -90,28 +82,28 @@ struct Upatient {
 fn read_patients(file_path: &str) -> Vec<Patient> {
     let mut tab = Vec::new();
     let file = File::open(file_path).unwrap();
-    let mut rdr = ReaderBuilder::new().delimiter(b';').from_reader(file);
+    let mut rdr = csv::ReaderBuilder::new().delimiter(b';').from_reader(file);
     for result in rdr.deserialize() {tab.push(result.unwrap());}
     tab
 }
 
 fn write_patients(file_path: &str,v:Vec<Patient>) {
     let file = File::create(file_path).unwrap();
-    let mut wrt = WriterBuilder::new().delimiter(b';').from_writer(file);
+    let mut wrt = csv::WriterBuilder::new().delimiter(b';').from_writer(file);
     for o in v {wrt.serialize(&o).unwrap();}
     wrt.flush().unwrap();
 }
 
 fn write_upatients(file_path: &str,v:Vec<Upatient>) {
     let file = File::create(file_path).unwrap();
-    let mut wrt = WriterBuilder::new().delimiter(b';').from_writer(file);
+    let mut wrt = csv::WriterBuilder::new().delimiter(b';').from_writer(file);
     for o in v {wrt.serialize(&o).unwrap();}
     wrt.flush().unwrap();
 }
 
 #[derive(Debug,Clone)]
 struct Maille {
-    geom     : Geometry<f64>,
+    geom     : geo::Geometry<f64>,
     dcomiris : Option<String>, // Code iris
 }
 
@@ -129,32 +121,26 @@ fn read_iris2() -> Vec<Maille> {
     let mut reader = shapefile::Reader::from_path("CONTOURS/CONTOURS-IRIS.shp").unwrap();
     for shape_record in reader.iter_shapes_and_records() {
 	let (shape, record) = shape_record.unwrap();
-	match shape {
-	    shapefile::record::Shape::Polygon(pl) => {
-		let p: geo_types::MultiPolygon<f64> = pl.into();
-		let p2: geo_types::Polygon<f64> = p.iter().next().unwrap().clone();
-//		println!("{:?}", p2);
-		let l = p2.exterior();
-		let l2:Vec<geo_types::Coord> = l.coords().map(|x| convert(x)).collect();
-		let l3 = geo_types::LineString::new(l2);
-		let p3 = geo_types::Polygon::new(l3,vec![]);
-		let geom:geo_types::Geometry = p3.into();
-//		println!("{:?}", geom);
-		for (name, value) in record {
-		    if name.eq("CODE_IRIS") {
-			match value {
-			    shapefile::dbase::FieldValue::Character(dcomiris) => {
-//				println! ("{:?}: {:?} ", geom, v);
-				tab.push(Maille {geom,dcomiris});
-			    },
-			    _ => {}
-			}
-			break;
-		    }
-		}
-	    },
-	    _ => {}
-	}
+	 if let shapefile::record::Shape::Polygon(pl) = shape {
+	     let p: geo_types::MultiPolygon<f64> = pl.into();
+	     let p2: geo_types::Polygon<f64> = p.iter().next().unwrap().clone();
+	     //		println!("{:?}", p2);
+	     let l = p2.exterior();
+	     let l2:Vec<geo_types::Coord> = l.coords().map(convert).collect();
+	     let l3 = geo_types::LineString::new(l2);
+	     let p3 = geo_types::Polygon::new(l3,vec![]);
+	     let geom:geo_types::Geometry = p3.into();
+	     //		println!("{:?}", geom);
+	     for (name, value) in record {
+		 if name.eq("CODE_IRIS") {
+		     if let shapefile::dbase::FieldValue::Character(dcomiris) = value {
+			 //				println! ("{:?}: {:?} ", geom, v);
+			 tab.push(Maille {geom,dcomiris});
+			 break;
+		     }
+		 }
+	     }
+	 }
     }
     println!("Iris database built in {:?}", now.elapsed());
     tab
@@ -163,17 +149,17 @@ fn read_iris2() -> Vec<Maille> {
 #[allow(dead_code)]
 fn read_iris() -> Vec<Maille> {
     let now = Instant::now();
-    let contents = fs::read_to_string("iris.geojson")
+    let contents = std::fs::read_to_string("iris.geojson")
 	.unwrap();
-    let geojson = contents.parse::<GeoJson>().unwrap();
+    let geojson = contents.parse::<geojson::GeoJson>().unwrap();
     let mut tab = Vec::new();
     match geojson {
-        GeoJson::FeatureCollection(ctn) => {
+        geojson::GeoJson::FeatureCollection(ctn) => {
 	    let f = ctn.features;
             println!("Found {} features", f.len());
 	    for a in &f {
 		let dcomiris = a.property("c_dcomiris").map(|v| v.as_str().unwrap().to_string());
-		let geom : Geometry<f64> = a.geometry.as_ref().unwrap().try_into().unwrap();
+		let geom : geo::Geometry<f64> = a.geometry.as_ref().unwrap().try_into().unwrap();
 		tab.push(Maille {geom,dcomiris});
 	    }
 	    println!("Iris database built in {:?}", now.elapsed());
@@ -379,7 +365,7 @@ fn get_iris_adresses(r:&Patient,iris:&[Maille],addrs:&[Adresse]) -> Option<Upati
 	let s_ville = fuzzy_compare(&city,&addrs[j].nom_commune);
 	let s_adresse = fuzzy_compare(&street,&addrs[j].nom_voie);
 //	println!("{:?}",addrs[j]);
-	let p = Point::new (addrs[j].lon,addrs[j].lat);
+	let p = geo_types::Point::new (addrs[j].lon,addrs[j].lat);
 	for o in iris {
 	    if o.geom.contains(&p) {
 		let mut addr = addrs[j].nom_voie.clone();
@@ -453,11 +439,11 @@ fn main() {
     let my_adresses = "my-adresses.bin";
     let patient_file = &args[1];
     
-    let meta = fs::metadata(adresses);
+    let meta = std::fs::metadata(adresses);
     let res = match meta {
 	Ok(m) => {
 	    let ot1 = m.modified().unwrap();
-	    let meta = fs::metadata(my_adresses);
+	    let meta = std::fs::metadata(my_adresses);
 	    match meta {
 		Ok(m) => {
 		    let ot2 = m.modified().unwrap();
@@ -475,7 +461,7 @@ fn main() {
 	clean_adresses(&mut addrs);
 	let now = Instant::now();
 	let file = File::create(my_adresses).unwrap();
-	let mut writer = BufWriter::new(&file);
+	let mut writer = std::io::BufWriter::new(&file);
 	bincode::serialize_into(&mut writer,&addrs).unwrap();
 	println!("Addresses database written in {:?}",now.elapsed());
 	addrs
@@ -483,7 +469,7 @@ fn main() {
     else {
 	let now = Instant::now();
 	let file = File::open(my_adresses).unwrap();
-	let mut reader = BufReader::new(&file);
+	let mut reader = std::io::BufReader::new(&file);
 	let addrs = bincode::deserialize_from(&mut reader).unwrap();
 	println!("Addresses database read in {:?}",now.elapsed());
 	addrs
@@ -496,101 +482,3 @@ fn main() {
 }
 
 
-
-/*
-    //    let osm = Openstreetmap::new();
-
-fn get_iris_from_osm(buffer:&String,iris:&Vec<Maille>,osm:&Openstreetmap) -> Option<Maille> {
-    let res = osm.forward(&buffer);
-    let p:Vec<Point<f64>> = res.unwrap();
-    if p.len()>0 {
-	for i in 0..iris.len() {
-	    if iris[i].geom.contains(&p[0]) {return Some(iris[i].clone());}
-	}
-    }
-    return None;
-}
-*/
-
-    /*
-    if ! res {
-	println!("Need to rebuild database");
-	addrs = read_adresses(adresses);
-	addrs = clean_adresses(addrs);
-	let now = Instant::now();
-	let file = File::create(my_adresses).unwrap();
-	let mut wrt = WriterBuilder::new()
-            .delimiter(b';')
-            .from_writer(file);
-	for i in 0..addrs.len() {
-	    wrt.serialize(&addrs[i]).unwrap();
-	}
-	println!("Database written in {:?}",now.elapsed());
-    }
-    else {
-	let file = File::open(my_adresses).unwrap();
-	let mut rdr = ReaderBuilder::new()
-            .delimiter(b';')
-            .from_reader(file);
-	let now = Instant::now();
-	for result in rdr.deserialize() {
-            let  record = result.unwrap();
-	    addrs.push(record);
-	}
-	println!("Database read in {:?}",now.elapsed());
-    }
-
-    */
-    /*
-    // 396s
-    // 1.4G
-    {
-    let now = Instant::now();
-    let file_path = "adresses-france2.bin";
-    let mut file = File::create(file_path).unwrap();
-    rmp_serde::encode::write(&mut file,&addrs).unwrap();
-    println!("{:?}",now.elapsed());
-    }
-    */
-
-/*
-    // 180s
-    let file_path = "adresses-france2.bin";
-    let mut file = File::open(file_path).unwrap();
-    let now = Instant::now();
-    let res = rmp_serde::decode::from_read(&mut file);
-    println!("{:?}",now.elapsed());
-    match res {
-	Ok(addrs) => {
-	    read_from_csv2(iris,addrs);
-	},
-	Err (_) => {}
-    }
-*/
-
-    /*
-    // 300s
-    // 1.6G
-    {
-	let now = Instant::now();
-	let file_path = "adresses-france2.bin";
-	let mut file = File::create(file_path).unwrap();
-	bincode::serialize_into(&mut file,&addrs).unwrap();
-	println!("{:?}",now.elapsed());
-    }
-*/
-
-  /*
-    // 137s
-    let now = Instant::now();
-    let file_path = "adresses-france2.bin";
-    let mut file = File::open(file_path).unwrap();
-    let res = bincode::deserialize_from(&mut file);
-    println!("{:?}",now.elapsed());
-    match res {
-	Ok(addrs) => {
-	    read_from_csv2(iris,addrs);
-	},
-	Err (_) => {}
-    }
-*/
