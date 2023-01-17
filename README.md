@@ -19,7 +19,7 @@ Pour l'année 2022 par exemple, il faut récupérer l'archive
 `CONTOURS-IRIS_2-1__SHP__FRA_2022-01-01.7z`
 - trouver dans l'arborescence de l'archive le répertoire 
 `CONTOURS-IRIS_2-1_SHP_LAMB93_FXX-2022` (si l'on travaille sur 2022, à adapter évidemment pour une autre année)
-- extraire ce répertoire dans le répertoire qui contient le programme et le renommer simplement en 
+- extraire ce répertoire (il faut bien extraire le répertoire en entier et non le contenu du répertoire) dans le répertoire qui contient le programme et le renommer simplement en 
 `CONTOURS`. 
 
 De cette façon, il est possible d'utiliser les données de maille pour n'importe quelle année.
