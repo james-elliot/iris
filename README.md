@@ -1,21 +1,28 @@
 # Retrouve à partir d'une adresse le numéro de la maille IRIS de l'INSEE
 
-La v1 utilise les données geojson disponibles
+La v1 utilisait les données `iris.geojson` disponibles
 [ici](https://data.opendatasoft.com/explore/dataset/iris@datailedefrance/export/)
 et les adresses de la base de données gouvernementales disponibles
 [là](https://adresse.data.gouv.fr/data/ban/adresses/latest/csv/adresses-france.csv.gz).
 Les fichiers doivent être placés dans le répertoire contenant le programme.
+***La v1 est désormais obsolète et est remplacée par la v2.***
 
-Le fichier `iris.geojson` distribué sur le site opendatasoft est instable.
-La v2 n'utilise plus ce fichier mais utilise directement les données au format shapefile distribuées
-par l'IGN disponibles
+Le fichier `iris.geojson` distribué sur le site opendatasoft était instable.
+***La v2 ne l'utilise plus.***
+Elle utilise directement les données au format shapefile distribuées
+par l'IGN.
+***Il est donc désormais inutile de récupérer le fichier iris.geojson.***
+A la place il faut utiliser la procédure suivante: 
+- récupérer l'archive des contours IRIS disponibles
 [ici](https://geoservices.ign.fr/contoursiris).
-Pour l'année 2022 par exemple, il faut récupérer le fichier 
+Pour l'année 2022 par exemple, il faut récupérer l'archive
 `CONTOURS-IRIS_2-1__SHP__FRA_2022-01-01.7z`
-Il faut ensuite trouver dans l'arborescence de l'archive le répertoire 
-`CONTOURS-IRIS_2-1_SHP_LAMB93_FXX-2022`
-puis l'extraire dans le répertoire qui contient le programme et le renommer en 
-`CONTOURS`. De cette façon, il est possible d'utiliser les données de maille pour n'importe quelle année.
+- trouver dans l'arborescence de l'archive le répertoire 
+`CONTOURS-IRIS_2-1_SHP_LAMB93_FXX-2022` (si l'on travaille sur 2022, à adapter évidemment pour une autre année)
+- extraire ce répertoire dans le répertoire qui contient le programme et le renommer simplement en 
+`CONTOURS`. 
+
+De cette façon, il est possible d'utiliser les données de maille pour n'importe quelle année.
 
 Les données d'adresses sont en coordonnées WGS84 alors que les données de la maille IRIS sont en format Lambert93.
 La conversion est faite par le programme en se basant sur la crate Rust `lambert`. Nous n'avons pas noté de différence 
