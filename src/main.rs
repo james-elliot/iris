@@ -115,7 +115,7 @@ fn convert(c:&geo_types::Coord) -> geo_types::Coord {
 }
 
 #[allow(dead_code)]
-fn read_iris2() -> Vec<Maille> {
+fn read_iris() -> Vec<Maille> {
     let now = Instant::now();
     let mut tab = Vec::new();
     let mut reader = shapefile::Reader::from_path("CONTOURS/CONTOURS-IRIS.shp").unwrap();
@@ -147,7 +147,7 @@ fn read_iris2() -> Vec<Maille> {
 }
 
 #[allow(dead_code)]
-fn read_iris() -> Vec<Maille> {
+fn read_iris2() -> Vec<Maille> {
     let now = Instant::now();
     let contents = std::fs::read_to_string("iris.geojson")
 	.unwrap();
