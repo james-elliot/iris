@@ -1,18 +1,8 @@
 # Retrouve à partir d'une adresse le numéro de la maille IRIS de l'INSEE
 
-La v1 utilisait les données `iris.geojson` disponibles
-[ici](https://data.opendatasoft.com/explore/dataset/iris@datailedefrance/export/)
-et les adresses de la base de données gouvernementales disponibles
-[là](https://adresse.data.gouv.fr/data/ban/adresses/latest/csv/adresses-france.csv.gz).
-Les fichiers doivent être placés dans le répertoire contenant le programme.
-***La v1 est désormais obsolète et est remplacée par la v2.***
 
-Le fichier `iris.geojson` distribué sur le site opendatasoft était instable.
-***La v2 ne l'utilise plus.***
-Elle utilise directement les données au format shapefile distribuées
-par l'IGN.
-***Il est donc désormais inutile de récupérer le fichier iris.geojson.***
-A la place il faut utiliser la procédure suivante: 
+Il faut d'abord récupérer les données au format shapefile distribuées
+par l'IGN: 
 - récupérer l'archive des contours IRIS disponibles
 [ici](https://geoservices.ign.fr/contoursiris).
 Pour l'année 2022 par exemple, il faut récupérer l'archive
@@ -23,6 +13,10 @@ Pour l'année 2022 par exemple, il faut récupérer l'archive
 `CONTOURS`. 
 
 De cette façon, il est possible d'utiliser les données de maille pour n'importe quelle année.
+
+Il faut ensuite récupérer les données de la base d'adresse gouvernementale disponibles
+[là](https://adresse.data.gouv.fr/data/ban/adresses/latest/csv/adresses-france.csv.gz),
+puis les décompresser pour récupérer le fichier `adresses-france.csv`
 
 Les données d'adresses sont en coordonnées WGS84 alors que les données de la maille IRIS sont en format Lambert93.
 La conversion est faite par le programme en se basant sur la crate Rust `lambert`. Nous n'avons pas noté de différence 
@@ -50,3 +44,9 @@ Si une adresse proche est trouvée les résultats sont écrits dans le fichier `
 format que celui de `ok.csv` mais avec des indices de confiance inférieurs à 1.0.
 
 Si aucune adresse proche n'est trouvée, les données sont reproduites à l'identique dans le fichier `nok.csv`.
+
+Un fichier d'exemple `test.csv` est livré avec le programme. 
+
+Le programme peut être lancé par exemple en faisant `cargo run --release test.csv`
+
+
