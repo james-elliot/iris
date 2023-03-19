@@ -47,6 +47,7 @@ Si aucune adresse proche n'est trouvée, les données sont reproduites à l'iden
 
 Un fichier d'exemple `test.csv` est livré avec le programme. 
 
-Le programme peut être lancé par exemple en faisant `cargo run --release test.csv`
+Le programme peut être lancé par exemple en faisant `cargo run --release test.csv` depuis un environnement Rust complet, 
+ou simplement en récupérant une release complète avec les exécutables windows et linux et en faisant `address test.csv`
 
 
